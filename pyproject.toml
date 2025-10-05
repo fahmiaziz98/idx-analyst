@@ -4,4 +4,35 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi==0.116.2",
+    "langchain==0.3.27",
+    "langchain-google-genai==2.1.12",
+    "langchain-text-splitters==0.3.11",
+    "langgraph==0.6.8",
+    "llama-cloud-services==0.6.72",
+    "loguru==0.7.3",
+    "pydantic-settings==2.11.0",
+    "pymupdf==1.26.4",
+    "qdrant-client==1.15.1",
+    "tavily-python==0.7.12",
+    "tiktoken==0.11.0",
+    "uvicorn[standard]==0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13.3",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]  # Error, Formatting, Imports, Bugbear, Upgrade checks
+ignore = ["E501"]  # contoh: abaikan panjang baris kalau perlu
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
