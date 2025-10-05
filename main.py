@@ -1,5 +1,9 @@
+def add(x, y):
+    return x + y
+
+
 def main():
-    print("Hello from idx-analyst!")
+    print(add(1, 2))
 
 
 if __name__ == "__main__":
