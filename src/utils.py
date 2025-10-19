@@ -1,18 +1,18 @@
 import json
+
 import tiktoken
-from typing import List, Dict
 
 
-def load_data(path: str) -> List[Dict]:
+def load_data(path: str) -> list[dict]:
     """
     Load data from a JSON file and return a list of dictionaries.
     """
-    with open(path, "r") as f:
+    with open(path) as f:
         data = json.load(f)
     return data
 
 
-def filter_non_header_documents(document_list: List[Dict]) -> List[Dict]:
+def filter_non_header_documents(document_list: list[dict]) -> list[dict]:
     """
     Filter documents to include only those where is_header is False.
 
@@ -34,8 +34,7 @@ def filter_non_header_documents(document_list: List[Dict]) -> List[Dict]:
         >>> filtered[0]['id']
         2
     """
-    return [doc for doc in document_list if doc.get('is_header') is False]
-
+    return [doc for doc in document_list if doc.get("is_header") is False]
 
 
 def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:

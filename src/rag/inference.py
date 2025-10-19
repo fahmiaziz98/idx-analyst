@@ -1,6 +1,8 @@
+import asyncio
+from typing import Any
+
 import httpx
 from loguru import logger
-from typing import List, Dict, Any, Optional
 
 
 class InferenceClient:
@@ -8,7 +10,7 @@ class InferenceClient:
     Client for interacting with Unified Embedding & Reranking API.
 
     Supports both embedding and reranking operations, with automatic
-    model listing and connection testing.
+    model listing, connection testing, and retry mechanism.
     """
 
     def __init__(self, base_url: str, rerank_url: str):
@@ -16,40 +18,31 @@ class InferenceClient:
         Initialize the client with the API base URL.
 
         Args:
-            base_url (str): The root endpoint of the API (e.g. 'https://your-api.hf.space')
-            rerank_url (str): The root endpoint for the reranking API.
+            base_url (str): Root endpoint of the embedding API (e.g. 'https://your-api.hf.space')
+            rerank_url (str): Root endpoint of the reranking API.
         """
         self.base_url = base_url.rstrip("/")
         self.rerank_url = rerank_url.rstrip("/")
-        self.client = httpx.AsyncClient()
-
+        self.client = httpx.AsyncClient(timeout=120)
+        self.max_retries = 5
+        self.retry_delay = 2
 
     async def _test_connection(self) -> bool:
-        """
-        Check if the API server is reachable and healthy.
-
-        Returns:
-            bool: True if API is reachable and healthy, False otherwise.
-        """
+        """Check if the API server is reachable and healthy."""
         try:
             response_base = await self.client.get(f"{self.base_url}/health")
             response_rerank = await self.client.get(f"{self.rerank_url}/health")
             if response_base.status_code == 200 and response_rerank.status_code == 200:
                 logger.success("✅ API connection successful!")
                 return True
-            logger.warning("⚠️ API health check returned unexpected response")
+            logger.warning(f"⚠️ API health check returned unexpected response: {response_base.text}")
             return False
         except httpx.RequestError as e:
             logger.error(f"❌ Failed to connect to API: {e}")
             return False
 
-    async def list_available_models(self) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        List all available reranking and embedding models.
-
-        Returns:
-            dict: A dictionary containing two lists — `embedding` and `rerank` models.
-        """
+    async def list_available_models(self) -> dict[str, list[dict[str, Any]]]:
+        """List all available reranking and embedding models."""
         try:
             embedding_resp = await self.client.get(f"{self.base_url}/models")
             rerank_resp = await self.client.get(f"{self.rerank_url}/models")
@@ -57,120 +50,111 @@ class InferenceClient:
             embedding_models = embedding_resp.json() if embedding_resp.status_code == 200 else []
             rerank_models = rerank_resp.json() if rerank_resp.status_code == 200 else []
 
-            logger.info(f"📦 Found {len(embedding_models)} embedding models and {len(rerank_models)} reranking models")
+            logger.info(
+                f"Found {len(embedding_models)} embedding models and {len(rerank_models)} reranking models"
+            )
 
-            return {
-                "embedding": embedding_models,
-                "rerank": rerank_models
-            }
+            return {"embedding": embedding_models, "rerank": rerank_models}
 
         except Exception as e:
             logger.error(f"Failed to fetch available models: {e}")
             return {"embedding": [], "rerank": []}
 
-    async def embed(
-        self,
-        texts: str,
-        model_id: str,
-        prompt: Optional[str] = None
-    ) -> Optional[List[List[float]]]:
+    async def _post_with_retry(self, url: str, payload: dict[str, Any]) -> httpx.Response | None:
         """
-        Generate embeddings for a list of input texts.
+        Internal helper for POST requests with retry logic.
+
+        Retries up to `self.max_retries` times with exponential backoff
+        if the request fails or returns a non-200 status code.
+        """
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = await self.client.post(url, json=payload)
+                if response.status_code == 200:
+                    return response
+                else:
+                    logger.warning(
+                        f"Attempt {attempt}/{self.max_retries} failed with status {response.status_code}: {response.text}"
+                    )
+            except httpx.RequestError as e:
+                logger.warning(f"Attempt {attempt}/{self.max_retries} request error: {e}")
+
+            if attempt < self.max_retries:
+                delay = self.retry_delay * (2 ** (attempt - 1))
+                logger.info(f"⏳ Retrying in {delay:.1f}s...")
+                await asyncio.sleep(delay)
+
+        logger.error(f"All {self.max_retries} attempts failed for URL: {url}")
+        return None
+
+    async def query(
+        self, text: str, model_id: str, prompt: str | None = None
+    ) -> list[list[float]] | None:
+        """
+        Generate embeddings for a list of input texts with retry logic.
 
         Args:
             texts (List[str]): List of input sentences.
-            model_id (str): Model identifier from config.yaml.
+            model_id (str): Model identifier.
             prompt (Optional[str]): Optional prefix prompt for instruction-based models.
-
-        Returns:
-            List[List[float]]: List of embedding vectors, or None if failed.
         """
-        try:
-            payload = {"text": texts, "model_id": model_id}
-            if prompt:
-                payload["prompt"] = prompt
+        payload = {"text": text, "model_id": model_id}
+        if prompt:
+            payload["prompt"] = prompt
 
-            response = await self.client.post(f"{self.base_url}/embed", json=payload)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Embedding failed: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Embedding request failed: {e}")
-            return None
+        response = await self._post_with_retry(f"{self.base_url}/query", payload)
+        return response.json() if response else None
 
-    async def embed_batch(
-        self,
-        batches: List[str],
-        model_id: str,
-        prompt: Optional[str] = None
-    ) -> Optional[List[List[float]]]:
+    async def embed(
+        self, text: str, model_id: str, prompt: str | None = None
+    ) -> list[list[float]] | None:
         """
-        Generate embeddings for multiple batches of text.
-
-        Useful when processing large datasets that need to be split
-        into smaller chunks for memory efficiency.
+        Generate embeddings for a list of input texts with retry logic.
 
         Args:
-            batches (List[List[str]]): List of text batches.
+            texts (List[str]): List of input sentences.
             model_id (str): Model identifier.
-            prompt (Optional[str]): Optional prefix prompt.
-
-        Returns:
-            List[List[float]]: Combined list of embeddings from all batches.
+            prompt (Optional[str]): Optional prefix prompt for instruction-based models.
         """
-        try:
-            payload = {"texts": batches, "model_id": model_id}
-            if prompt:
-                payload["prompt"] = prompt
+        payload = {"text": text, "model_id": model_id}
+        if prompt:
+            payload["prompt"] = prompt
 
-            response = await self.client.post(f"{self.base_url}/embed/batch", json=payload)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Batch embedding failed: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Batch embedding request failed: {e}")
-            return None
+        response = await self._post_with_retry(f"{self.base_url}/embed", payload)
+        return response.json() if response else None
+
+    async def embed_batch(
+        self, batches: list[str], model_id: str, prompt: str | None = None
+    ) -> list[list[float]] | None:
+        """
+        Generate embeddings for multiple batches of text with retry logic.
+        """
+        payload = {"texts": batches, "model_id": model_id}
+        if prompt:
+            payload["prompt"] = prompt
+
+        response = await self._post_with_retry(f"{self.base_url}/embed/batch", payload)
+        return response.json() if response else None
 
     async def rerank(
         self,
         query: str,
-        documents: List[str],
+        documents: list[str],
         model_id: str,
-        top_k: Optional[int] = None,
-        prompt: Optional[str] = None
-    ) -> Optional[List[Dict[str, Any]]]:
+        top_k: int | None = None,
+        prompt: str | None = None,
+    ) -> list[dict[str, Any]] | None:
         """
-        Rerank a list of documents given a query using a reranking model.
-
-        Args:
-            query (str): Input query text.
-            documents (List[str]): List of candidate documents.
-            model_id (str): Model identifier for reranking.
-            prompt (Optional[str]): Optional instruction/prompt for reranker models.
-
-        Returns:
-            List[Dict[str, Any]]: Ranked documents with scores and indices.
+        Rerank a list of documents given a query using retry logic.
         """
-        try:
-            payload = {"query": query, "documents": documents, "model_id": model_id}
-            if prompt:
-                payload["instruction"] = prompt  
-            if top_k:
-                payload["top_k"] = top_k
+        payload = {"query": query, "documents": documents, "model_id": model_id}
+        if prompt:
+            payload["instruction"] = prompt
+        if top_k:
+            payload["top_k"] = top_k
 
-            response = await self.client.post(f"{self.rerank_url}/rerank", json=payload)
-            if response.status_code == 200:
-                return response.json().get("results", [])
-            else:
-                logger.error(f"Rerank failed: {response.text}")
-                return None
-        except Exception as e:
-            logger.error(f"Rerank request failed: {e}")
-            return None
+        response = await self._post_with_retry(f"{self.rerank_url}/rerank", payload)
+        return response.json() if response else None
 
     async def close(self):
         """Gracefully close the HTTP client."""
