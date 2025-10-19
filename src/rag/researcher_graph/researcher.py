@@ -4,9 +4,11 @@ from langchain.chat_models import init_chat_model
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 from loguru import logger
+from tavily import AsyncTavilyClient
 
 from core import config
 from rag import prompts
+from rag.utils import _generate_uuid
 from rag.vector_db import get_retriever_instance
 
 from .state import QueryState, ResearcherState
@@ -55,6 +57,33 @@ async def retrieve_documents(state: QueryState) -> list[dict[str, Any]]:
     return {"documents": response}
 
 
+async def web_search(state: QueryState) -> list[dict[str, Any]]:
+    """
+    Perform a web search based on a given query using Tavily.
+    This function uses the Tavily client to fetch relevant web search results for a given query.
+
+    Args:
+        state (QueryState): The current state containing the query string.
+    Returns:
+        dict[str, list[dict[str, Any]]]: A dictionary with a 'web_results' key containing the list of web search results.
+    """
+    logger.info(f"Performing web search for query: {state.query}")
+    client = AsyncTavilyClient(api_key=config.TAVILY_API_KEY)
+    search_results = await client.search(state.query, num_results=1, include_raw_content=False)
+
+    format_documents = [
+        {
+            "id": _generate_uuid(doc["content"]),
+            "chunk_text": doc["content"],
+            "rerank_score": doc["score"],
+            "metadata": {"url": doc["url"], "title": doc["title"]},
+        }
+        for doc in search_results["results"]
+    ]
+
+    return {"documents": format_documents}
+
+
 def retrieve_in_parallel(state: ResearcherState) -> list[Send]:
     """
     Create parallel retrieval tasks for each generated query.
@@ -73,21 +102,21 @@ def retrieve_in_parallel(state: ResearcherState) -> list[Send]:
     sends = []
     for query in state.queries:
         sends.append(Send("retrieve_documents", QueryState(query=query)))
-        # sends.append(Send("web_search", QueryState(query=query)))
+        sends.append(Send("web_search", QueryState(query=query)))
     return sends
 
 
 builder = StateGraph(ResearcherState)
 builder.add_node(generate_queries)
-# builder.add_node(web_search)
+builder.add_node(web_search)
 builder.add_node(retrieve_documents)
 builder.add_edge(START, "generate_queries")
 builder.add_conditional_edges(
     "generate_queries",
     retrieve_in_parallel,  # type: ignore
-    path_map=["retrieve_documents"],  # "web_search"],
+    path_map=["retrieve_documents", "web_search"],
 )
-# builder.add_edge("web_search", END)
+builder.add_edge("web_search", END)
 builder.add_edge("retrieve_documents", END)
 
 # Compile into a graph object that you can invoke and deploy.
