@@ -10,7 +10,7 @@ from portalocker.exceptions import AlreadyLocked
 from qdrant_client import AsyncQdrantClient, models
 from tqdm import tqdm
 
-from core import config
+from core import settings
 from rag.inference import InferenceClient
 
 
@@ -24,7 +24,7 @@ class QdrantClientWrapper:
 
     def __init__(
         self,
-        config=config,
+        config=settings,
         path_client: str = "client",
         is_local: bool = False,
     ):
@@ -36,7 +36,7 @@ class QdrantClientWrapper:
             path_client: Path for local Qdrant storage
             is_local: Whether to use local Qdrant instance
         """
-        self.config = config
+        self.config = settings
         self.api_client = InferenceClient(
             base_url=config.EMBEDDING_API_URL, rerank_url=config.RERANK_API_URL
         )

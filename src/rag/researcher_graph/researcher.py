@@ -6,7 +6,7 @@ from langgraph.types import Send
 from loguru import logger
 from tavily import AsyncTavilyClient
 
-from core import config
+from core import settings as config
 from rag import prompts
 from rag.utils import _generate_uuid
 from rag.vector_db import get_retriever_instance

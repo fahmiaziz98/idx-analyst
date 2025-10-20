@@ -53,4 +53,4 @@ def get_settings() -> ConfigSettings:
     return ConfigSettings()
 
 
-config = get_settings()
+settings = get_settings()
