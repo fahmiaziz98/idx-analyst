@@ -1,22 +1,22 @@
-from fastapi import Request, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
-from loguru import logger
 import time
+
+from fastapi import HTTPException, Request
+from loguru import logger
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, throttle_rate: int = 60):
         super().__init__(app)
         self.throttle_rate = throttle_rate
-        self.request_log = {}  
+        self.request_log = {}
 
     async def dispatch(self, request: Request, call_next):
         client_ip = request.client.host
         now = time.time()
 
         self.request_log = {
-            ip: [ts for ts in times if ts > now - 60]
-            for ip, times in self.request_log.items()
+            ip: [ts for ts in times if ts > now - 60] for ip, times in self.request_log.items()
         }
 
         ip_history = self.request_log.get(client_ip, [])

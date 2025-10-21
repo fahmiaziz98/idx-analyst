@@ -3,7 +3,26 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings
 
 
-class ConfigSettings(BaseSettings):
+class Settings(BaseSettings):
+    # API Configuration
+    API_TITLE: str = "RAG Chatbot API"
+    API_VERSION: str = "1.0.0"
+    API_DESCRIPTION: str = "Scalable RAG Chatbot with LangGraph"
+    ENVIRONMENT: str = "development"
+
+    # Security
+    API_KEYS: str
+    ALLOWED_ORIGINS: str = "*"
+
+    # Server
+    HOST: str = "0.0.0.0"
+    PORT: int = 7860
+    WORKERS: int = 4
+
+    # Rate Limiting
+    RATE_LIMIT_REQUESTS: int = 100
+    RATE_LIMIT_WINDOW: int = 60
+
     # llm model
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.0-flash"
@@ -34,7 +53,7 @@ class ConfigSettings(BaseSettings):
     INSTRUCTION_RERANK: str = "Given a financial analysis query and several candidate passages from Indonesian public company reports, rank the passages by how well they answer the query"
 
     # Setting Qdrant DB
-    QDRANT_API_KEY: str = ""
+    QDRANT_API_KEY: str 
     QDRANT_BASE_URL: str
     COLLECTION: str = "documents"
 
@@ -45,12 +64,24 @@ class ConfigSettings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
-        extra = "allow"
+   
+    @property
+    def api_keys_list(self) -> list[str]:
+        """Parse comma-separated API keys"""
+        return [key.strip() for key in self.API_KEYS.split(",")]
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        """Parse comma-separated origins"""
+        if self.ALLOWED_ORIGINS == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
 
 
 @lru_cache
-def get_settings() -> ConfigSettings:
-    return ConfigSettings()
+def get_settings() -> Settings:
+    """Cache settings instance"""
+    return Settings()
 
 
 settings = get_settings()

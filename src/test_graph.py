@@ -7,13 +7,14 @@ async def test_graph(messages: str):
     result = await graph.ainvoke({"messages": messages})
     print(result["messages"][-1].content)
 
+
 async def stream_test_graph(messages: str):
-    async for msg, metadata in graph.astream(
-        {"messages": messages}, stream_mode="messages"
-    ):
+    async for msg, _metadata in graph.astream({"messages": messages}, stream_mode="messages"):
         if msg.content:
             print(msg.content, end="", flush=True)
         # print(msg.content, metadata)
+
+
 if __name__ == "__main__":
     # asyncio.run(
     #     test_graph(
