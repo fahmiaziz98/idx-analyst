@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     INSTRUCTION_RERANK: str = "Given a financial analysis query and several candidate passages from Indonesian public company reports, rank the passages by how well they answer the query"
 
     # Setting Qdrant DB
-    QDRANT_API_KEY: str 
+    QDRANT_API_KEY: str
     QDRANT_BASE_URL: str
     COLLECTION: str = "documents"
 
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
-   
+
     @property
     def api_keys_list(self) -> list[str]:
         """Parse comma-separated API keys"""
