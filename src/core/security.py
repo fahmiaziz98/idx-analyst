@@ -7,7 +7,7 @@ from .config import settings
 api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
 
 
-async def get_api_key(api_key: str = Security(api_key_header)) -> str:
+async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
     """
     Validate API key from header
 
