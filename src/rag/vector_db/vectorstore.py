@@ -394,7 +394,7 @@ class QdrantClientWrapper:
                 return reranked_documents
 
             else:
-                return document_list
+                return document_list[:limit_reranker]
 
         except Exception as e:
             logger.error(f"Error during query: {e}")
