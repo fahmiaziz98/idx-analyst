@@ -14,7 +14,6 @@ router = APIRouter()
 @router.post(
     "/chat",
     response_model=ChatResponse,
-    tags=["Chat"],
     summary="Non-streaming chat endpoint",
     dependencies=[Depends(get_current_api_key)],
 )
@@ -50,7 +49,6 @@ async def chat(request: ChatRequest):
 
 @router.post(
     "/chat/stream",
-    tags=["Chat"],
     summary="Streaming chat endpoint (SSE)",
     dependencies=[Depends(get_current_api_key)],
 )

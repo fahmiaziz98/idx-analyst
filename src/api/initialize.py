@@ -17,20 +17,20 @@ async def initialize_vector_store() -> bool:
     """
     try:
         retriever = get_retriever_instance()
+        raw_documents = load_data(settings.DATA_PATH)
+        documents = filter_non_header_documents(raw_documents)
 
         await retriever.init_collection()
 
         doc_count = await retriever.count_documents()
         logger.info(f"Current documents in vector store: {doc_count}")
 
-        if doc_count == 0 or doc_count != settings.TOTAL_DOCUMENTS:
+        if doc_count == 0 or doc_count != len(documents):
             logger.warning("Document count mismatch or empty collection")
             logger.info("Loading documents into vector store...")
 
-            raw_documents = load_data(settings.DATA_PATH)
-            documents = filter_non_header_documents(raw_documents)
-
             settings.TOTAL_DOCUMENTS = len(documents)
+            logger.info(f"Total documents to load: {settings.TOTAL_DOCUMENTS}")
 
             await retriever.upload_collection(documents)
 
