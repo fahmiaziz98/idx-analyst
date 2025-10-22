@@ -18,10 +18,10 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 7860
     WORKERS: int = 4
-
+ 
     # Rate Limiting
-    RATE_LIMIT_REQUESTS: int = 60
-    RATE_LIMIT_WINDOW: int = 60
+    RATE_LIMIT_REQUESTS: int 
+    RATE_LIMIT_WINDOW: int 
 
     # llm model
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"

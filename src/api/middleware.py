@@ -5,6 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.core import settings
+
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
@@ -14,7 +17,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window_seconds (int): Time window in seconds
     """
 
-    def __init__(self, app, throttle_rate: int = 60, window_seconds: int = 60):
+    def __init__(self, app, throttle_rate: int, window_seconds: int):
         super().__init__(app)
         self.throttle_rate = throttle_rate
         self.window_seconds = window_seconds
@@ -86,7 +89,7 @@ def setup_middlewares(app):
     """
     Setup all middlewares
     """
-    app.add_middleware(RateLimitMiddleware, throttle_rate=60, window_seconds=60)
+    app.add_middleware(RateLimitMiddleware, throttle_rate=settings.RATE_LIMIT_REQUESTS, window_seconds=settings.RATE_LIMIT_WINDOW)
     setup_cors(app)
 
     logger.info("All middlewares configured")
