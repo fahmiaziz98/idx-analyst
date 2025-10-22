@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    """
+    Application configuration settings
+    """
     # API Configuration
     API_TITLE: str = "RAG Chatbot API"
     API_VERSION: str = "1.0.0"

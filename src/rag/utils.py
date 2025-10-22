@@ -10,6 +10,7 @@ def _generate_uuid(page_content: str) -> str:
 
 
 def _format_docs(doc: dict[str, Any]) -> str:
+    """Format a single document into a string representation."""
     metadata = doc["metadata"]
     meta = "".join(f" {k}={v!r}" for k, v in metadata.items())
     if meta:
@@ -18,6 +19,7 @@ def _format_docs(doc: dict[str, Any]) -> str:
 
 
 def format_docs(docs: list[dict[str, Any]] | None) -> str:
+    """Format a list of documents into a string representation."""
     if not docs:
         return "<documents></documents>"
     formatted_docs = "\n\n".join(_format_docs(doc) for doc in docs)
