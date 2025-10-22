@@ -33,7 +33,7 @@ async def analyze_and_route_query(state: AgentState) -> dict[str, Router]:
     Returns:
         dict[str, Router]: A dictionary containing the 'router' key with the classification result (classification type and logic).
     """
-    logger.info(f"node analyze_route_query, messages => {state.messages}")
+    logger.info(f"node analyze_route_query, messages => {state.messages[-1].content}")
     model = init_chat_model(config.MODEL_GEMINI_FLASH).with_structured_output(Router)
     messages = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}] + state.messages
     response = cast(Router, await model.ainvoke(messages))
@@ -67,7 +67,7 @@ async def ask_for_more_info(state: AgentState) -> dict[str, list[BaseMessage]]:
     Returns:
         dict[str, list[str]]: A dictionary with a 'messages' key containing the generated response.
     """
-    logger.info(f"node ask_for_more_info, messages => {state.messages}")
+    logger.info(f"node ask_for_more_info, messages => {state.messages[-1].content}")
 
     model = init_chat_model(config.MODEL_GEMINI_FLASH)
     system_prompt = MORE_INFO_SYSTEM_PROMPT.format(logic=state.router["logic"])
@@ -87,7 +87,7 @@ async def respond_to_general_query(state: AgentState) -> dict[str, list[BaseMess
     Returns:
         dict[str, list[str]]: A dictionary with a 'messages' key containing the generated response.
     """
-    logger.info(f"node respond_to_general_query, messages => {state.messages}")
+    logger.info(f"node respond_to_general_query, messages => {state.messages[-1].content}")
     system_prompt = GENERAL_SYSTEM_PROMPT.format(logic=state.router["logic"])
     model = init_chat_model(config.MODEL_GEMINI_FLASH)
     messages = [{"role": "system", "content": system_prompt}] + state.messages
@@ -107,7 +107,7 @@ async def conduct_research(state: AgentState) -> dict[str, Any]:
         dict[str, Any]: A dictionary with a 'documents' key containing the research results.
     """
 
-    logger.info(f"node conduct_research, messages => {state.messages}")
+    logger.info(f"node conduct_research, messages => {state.messages[-1].content}")
     result = await research_graph.ainvoke({"question": state.messages})
     return {"documents": result["documents"]}
 
@@ -124,7 +124,7 @@ async def respond(state: AgentState) -> dict[str, list[BaseMessage]]:
     Returns:
         dict[str, list[str]]: A dictionary with a 'messages' key containing the generated response.
     """
-    logger.info(f"node respond, messages => {state.messages}")
+    logger.info(f"node respond, messages => {state.messages[-1].content}")
     context = format_docs(state.documents)
     prompt = RESPONSE_SYSTEM_PROMPT.format(context=context)
     model = init_chat_model(config.MODEL_GEMINI_FLASH)
