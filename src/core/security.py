@@ -35,5 +35,4 @@ async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
             detail="Invalid API key. Access forbidden.",
             headers={"WWW-Authenticate": "API Key"},
         )
-    logger.info(f"API key validated: {api_key[:8]}...")
     return api_key

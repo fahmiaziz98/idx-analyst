@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
@@ -22,19 +22,18 @@ class ChatRequest(BaseModel):
         description="Optional metadata for additional context.",
     )
 
-    @field_validator("message")
-    @classmethod
-    def validate_message(cls, v: str) -> str:
-        """Validate and sanitize message"""
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("Message cannot be empty or whitespace only")
-        return cleaned
+    # @field_validator("message")
+    # def validate_message(cls, v: str) -> str:
+    #     """Validate and sanitize message"""
+    #     cleaned = v.strip()
+    #     if not cleaned:
+    #         raise ValueError("Message cannot be empty or whitespace only")
+    #     return cleaned
 
     class Config:
         json_schema_extra = {
             "example": {
-                "message": "what is Rag?",
+                "messages": "what is Rag?",
                 "conversation_id": "conv-123",
                 "metadata": {"user_id": "user-456", "timestamp": "2025-10-21T10:30:00"},
             }
@@ -73,7 +72,7 @@ class WebSocketMessage(BaseModel):
     content: str = Field(..., description="Message content")
     conversation_id: str | None = None
     metadata: dict[str, Any] | None = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now)
 
 
 class ErrorResponse(BaseModel):
@@ -81,7 +80,7 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error message")
     detail: str | None = Field(None, description="Detailed error information")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now)
 
     class Config:
         json_schema_extra = {
@@ -98,4 +97,4 @@ class HealthResponse(BaseModel):
 
     status: str = Field(default="healthy")
     version: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.now)

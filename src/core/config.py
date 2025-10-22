@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     WORKERS: int = 4
 
     # Rate Limiting
-    RATE_LIMIT_REQUESTS: int = 100
+    RATE_LIMIT_REQUESTS: int = 60
     RATE_LIMIT_WINDOW: int = 60
 
     # llm model
@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # vector name
     DENSE_VECTOR_NAME: str = "dense"
     SPARSE_VECTOR_NAME: str = "sparse"
+    DATA_PATH: str = "data/COMBINED_DATA.json"
+    TOTAL_DOCUMENTS: int = 0
 
     # embedding model
     EMBEDDING_DENSE: str = "qwen3-0.6b"
@@ -64,6 +66,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "allow"
 
     @property
     def api_keys_list(self) -> list[str]:

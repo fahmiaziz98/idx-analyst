@@ -1,0 +1,46 @@
+from loguru import logger
+
+from src.core import settings
+from src.rag.vector_db.vectorstore import get_retriever_instance
+from src.utils import filter_non_header_documents, load_data
+
+
+async def initialize_vector_store() -> bool:
+    """
+    Initialize and populate vector store if needed.
+
+    Args:
+        retriever: QdrantClientWrapper instance
+
+    Returns:
+        bool: True if initialization successful, False otherwise
+    """
+    try:
+        retriever = get_retriever_instance()
+
+        await retriever.init_collection()
+
+        doc_count = await retriever.count_documents()
+        logger.info(f"Current documents in vector store: {doc_count}")
+
+        if doc_count == 0 or doc_count != settings.TOTAL_DOCUMENTS:
+            logger.warning("Document count mismatch or empty collection")
+            logger.info("Loading documents into vector store...")
+
+            raw_documents = load_data(settings.DATA_PATH)
+            documents = filter_non_header_documents(raw_documents)
+
+            settings.TOTAL_DOCUMENTS = len(documents)
+
+            await retriever.upload_collection(documents)
+
+            new_count = await retriever.count_documents()
+            logger.success(f"Successfully loaded {new_count} documents")
+        else:
+            logger.info("Vector store is up to date")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to initialize vector store: {e}")
+        return False

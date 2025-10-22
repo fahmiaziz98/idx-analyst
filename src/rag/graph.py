@@ -6,7 +6,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import END, START, StateGraph
 from loguru import logger
 
-from core import settings as config
+from src.core import settings as config
 
 from .prompts import (
     GENERAL_SYSTEM_PROMPT,

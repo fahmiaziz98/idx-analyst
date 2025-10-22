@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
-from core.security import validate_api_key
 from loguru import logger
+
+from src.core.security import validate_api_key
 
 
 async def get_current_api_key(api_key: str = Depends(validate_api_key)) -> str:
@@ -18,6 +19,6 @@ async def verify_content_type(content_type: str = None):
         logger.warning(f"Invalid content type: {content_type}")
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Content-Type must be application/json"
+            detail="Content-Type must be application/json",
         )
     return content_type

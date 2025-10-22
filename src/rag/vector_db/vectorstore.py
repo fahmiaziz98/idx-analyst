@@ -10,8 +10,8 @@ from portalocker.exceptions import AlreadyLocked
 from qdrant_client import AsyncQdrantClient, models
 from tqdm import tqdm
 
-from core import settings
-from rag.inference import InferenceClient
+from src.core import settings
+from src.rag.inference import InferenceClient
 
 
 class QdrantClientWrapper:

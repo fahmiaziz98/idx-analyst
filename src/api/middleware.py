@@ -68,7 +68,7 @@ def setup_cors(app):
     """
     Setup CORS middleware
     """
-    from core import settings
+    from src.core import settings
 
     app.add_middleware(
         CORSMiddleware,

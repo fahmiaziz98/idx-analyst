@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Annotated, Any
 
-from rag.utils import reduce_docs
+from src.rag.utils import reduce_docs
 
 
 @dataclass(kw_only=True)
