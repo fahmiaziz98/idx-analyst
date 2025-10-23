@@ -4,11 +4,11 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from src.api.initialize import initialize_vector_store
 from src.api.logger import setup_logger
 from src.api.middleware import setup_middlewares
-from src.api.v1 import routers
+from src.api.v1 import routers, websocket
 from src.core import settings
-from src.api.initialize import initialize_vector_store
 from src.models.schemas import ErrorResponse, HealthResponse
 
 logger = setup_logger()
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Docs available at: http://{settings.HOST}:{settings.PORT}/docs")
     logger.info("=" * 50)
-    
+
     init_success = await initialize_vector_store()
     if not init_success:
         logger.error("Vector store initialization failed. Shutting down application.")
@@ -107,10 +107,5 @@ async def health_check():
     return HealthResponse(status="healthy", version=settings.API_VERSION)
 
 
-app.include_router(routers.router, prefix="/api/v1", tags=["v1"])
-
-# app.include_router(
-#     websocket.router,
-#     prefix="/api/v1/ws",
-#     tags=["WebSocket"]
-# )
+app.include_router(routers.router, prefix="/api/v1", tags=["Chat-Agent"])
+app.include_router(websocket.router, prefix="/api/v1/ws", tags=["WebSocket"])

@@ -8,7 +8,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.core import settings
 
 
-
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Middleware to limit the number of requests from a single IP address.
@@ -89,7 +88,11 @@ def setup_middlewares(app):
     """
     Setup all middlewares
     """
-    app.add_middleware(RateLimitMiddleware, throttle_rate=settings.RATE_LIMIT_REQUESTS, window_seconds=settings.RATE_LIMIT_WINDOW)
+    app.add_middleware(
+        RateLimitMiddleware,
+        throttle_rate=settings.RATE_LIMIT_REQUESTS,
+        window_seconds=settings.RATE_LIMIT_WINDOW,
+    )
     setup_cors(app)
 
     logger.info("All middlewares configured")
