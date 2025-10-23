@@ -19,11 +19,22 @@ class ConnectionManager:
         self.active_connections: dict[str, WebSocket] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str):
+        """
+        Connect a new WebSocket connection.
+        Args:
+            websocket (WebSocket): The WebSocket connection
+            session_id (str): The session ID for the connection
+        """
         await websocket.accept()
         self.active_connections[session_id] = websocket
         logger.info(f"WebSocket connected: {session_id}")
 
     def disconnect(self, session_id: str):
+        """
+        Disconnect a WebSocket connection.
+        Args:
+            session_id (str): The session ID to disconnect
+        """
         if session_id in self.active_connections:
             del self.active_connections[session_id]
             logger.info(f"WebSocket disconnected: {session_id}")
@@ -91,6 +102,11 @@ async def websocket_endpoint(
     websocket: WebSocket,
     api_key: str | None = Query(None, alias="api_key"),
 ):
+    """
+    WebSocket endpoint for real-time chat interaction 
+    with the RAG Chatbot.
+    Clients must provide a valid API key as a query parameter.
+    """
     if not await validate_ws_api_key(api_key):
         await websocket.close(code=1008)
         logger.warning("WebSocket connection rejected due to invalid API key")
