@@ -32,36 +32,23 @@ class Settings(BaseSettings):
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.0-flash"
 
     # vector name
-    DENSE_VECTOR_NAME: str = "dense"
-    SPARSE_VECTOR_NAME: str = "sparse"
     DATA_PATH: str = "data/COMBINED_DATA.json"
     TOTAL_DOCUMENTS: int = 0
 
-    # embedding model
-    EMBEDDING_DENSE: str = "qwen3-0.6b"
-    EMBEDDING_DENSE_SIZE: int = 1024
-    EMBEDDING_SPARSE: str = "splade-pp-v2"
-
     # cross-encoder model
     COHERE_API_KEY: str
-    COHERE_RANKER_MODEL: str = "rerank-english-v3.0"
-    QWEN3_RANK: str = "qwen3-reranker"
 
-    # Api embedding & Rerank
+    # Api embedding
     EMBEDDING_API_URL: str
-    RERANK_API_URL: str
-
     # Instruction
-    INSTRUCTION_DOC: str = (
-        "This is a passage from the annual financial report of an Indonesian public company"
-    )
+    INSTRUCTION_DOC: str = "This is a passage from the annual financial report of an Indonesian public company"
     INSTRUCTION_QUERY: str = "Given a financial analysis or QA query, retrieve relevant passages from annual reports of Indonesian public companies"
-    INSTRUCTION_RERANK: str = "Given a financial analysis query and several candidate passages from Indonesian public company reports, rank the passages by how well they answer the query"
+   
 
     # Setting Qdrant DB
     QDRANT_API_KEY: str
     QDRANT_BASE_URL: str
-    COLLECTION: str = "documents"
+    COLLECTION: str = "document"
 
     # Tavily Tool
     TAVILY_API_KEY: str

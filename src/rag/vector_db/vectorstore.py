@@ -8,13 +8,13 @@ import numpy as np
 from loguru import logger
 from portalocker.exceptions import AlreadyLocked
 from qdrant_client import AsyncQdrantClient, models
-from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
 
 from src.core import settings
-from src.rag.inference import InferenceClient
+from src.rag.embedding_client import EmbeddingAPIClient
 
 
-class QdrantClientWrapper:
+class QdrantVectoreStore:
     """
     Enhanced wrapper class for Qdrant client with complete document information preservation.
 
@@ -25,7 +25,7 @@ class QdrantClientWrapper:
     def __init__(
         self,
         config=settings,
-        path_client: str = "client",
+        path_client: str = "./local_db",
         is_local: bool = False,
     ):
         """
@@ -37,10 +37,13 @@ class QdrantClientWrapper:
             is_local: Whether to use local Qdrant instance
         """
         self.config = settings
-        self.api_client = InferenceClient(
-            base_url=config.EMBEDDING_API_URL, rerank_url=config.RERANK_API_URL
+        self.api_client = EmbeddingAPIClient(
+            base_url=config.EMBEDDING_API_URL
         )
         self.co = cohere.Client(self.config.COHERE_API_KEY)
+
+        self.DENSE_VECTOR_NAME = "dense"
+        self.SPARSE_VECTOR_NAME: str = "sparse"
 
         if is_local:
             try:
@@ -60,7 +63,7 @@ class QdrantClientWrapper:
             )
             logger.success("Successfully created remote Qdrant client")
 
-    async def init_collection(self):
+    async def create_collection(self, collection_name: str, dimension: int):
         """
         Create collection with hybrid vector configuration.
 
@@ -74,30 +77,42 @@ class QdrantClientWrapper:
         try:
             collections_response = await self.client.get_collections()
             existing = collections_response.collections
-            if not any(collection.name == self.config.COLLECTION for collection in existing):
+            if not any(collection.name == collection_name for collection in existing):
                 _ = await self.client.create_collection(
-                    collection_name=self.config.COLLECTION,
+                    collection_name=collection_name,
                     vectors_config={
-                        self.config.DENSE_VECTOR_NAME: models.VectorParams(
-                            size=self.config.EMBEDDING_DENSE_SIZE, distance=models.Distance.COSINE
+                        self.DENSE_VECTOR_NAME: models.VectorParams(
+                            size=dimension, 
+                            distance=models.Distance.COSINE,
+                            on_disk=True,
+                            quantization_config=models.BinaryQuantization(
+                                binary=models.BinaryQuantizationConfig(always_ram=True)
+                            )
                         )
                     },
                     sparse_vectors_config={
-                        self.config.SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                        self.SPARSE_VECTOR_NAME: models.SparseVectorParams(
                             index=models.SparseIndexParams(on_disk=False),
                             modifier=models.Modifier.IDF,
                         )
                     },
                     hnsw_config=models.HnswConfigDiff(
-                        on_disk=True,
-                        ef_construct=64,
-                        m=0,  # maximize performance speed indexing set = 0
-                        payload_m=32,
+                        m=8,  # Lower m = less edges = faster (standard: 16)
+                        ef_construct=32,  # 100 Standard construction quality
+                        full_scan_threshold=10000,  # Use HNSW for most queries
+                        max_indexing_threads=0,  # Auto-select optimal threads
+                        on_disk=True,  # HNSW index on disk, save RAM
+                        payload_m=16  # Payload edges for filtered search
                     ),
-                    quantization_config=models.BinaryQuantization(
-                        binary=models.BinaryQuantizationConfig(always_ram=True)
-                    ),
-                    optimizers_config=models.OptimizersConfigDiff(default_segment_number=32),
+                    optimizers_config=models.OptimizersConfigDiff(
+                        deleted_threshold=0.2,
+                        vacuum_min_vector_number=1000,
+                        default_segment_number=2,  # CRITICAL: Low segments = faster search
+                        max_segment_size=None,  # No limit
+                        indexing_threshold=50000,  # Large threshold = less frequent indexing
+                        flush_interval_sec=10,  # Longer flush interval
+                        max_optimization_threads=0  # Auto
+                    )
                 )
                 logger.success(f"Successfully created collection `{self.config.COLLECTION}`")
             else:
@@ -105,302 +120,422 @@ class QdrantClientWrapper:
         except Exception as e:
             logger.error(f"Error creating collection: {e}")
 
-    async def update_collection(
-        self,
-        hnsw_config: models.HnswConfigDiff | None = None,
-        quantization_config: models.ScalarQuantization | None = None,
-        optimizers_config: models.OptimizersConfigDiff | None = None,
-    ) -> bool:
-        """
-        Update collection configuration.
-
-        Args:
-            collection_name: Name of collection to update
-            hnsw_config: HNSW configuration updates
-            quantization_config: Quantization configuration
-            optimizers_config: Optimizer configuration
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.client:
-            logger.error("Qdrant client not available")
-            return False
-
-        kwargs = {}
-        if hnsw_config:
-            kwargs["hnsw_config"] = hnsw_config
-        if quantization_config:
-            kwargs["quantization_config"] = quantization_config
-        if optimizers_config:
-            kwargs["optimizers_config"] = optimizers_config
-
-        try:
-            await self.client.update_collection(collection_name=self.config.COLLECTION, **kwargs)
-            logger.success(f"Successfully updated collection `{self.config.COLLECTION}`")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating collection: {e}")
-            return False
-
-    def _format_qdrant(self, embedding):
-        "format sparse embedding for qdrant"
-        indices_np = np.array(embedding["indices"])
-        values_np = np.array(embedding["values"])
-        return {
-            "values": values_np,
-            "indices": indices_np,
-        }
-
-    async def upload_collection(
-        self, documents: list[dict[str, Any]], batch_size: int = 32
+    async def upload_documents(
+        self, 
+        collection_name: str,
+        documents: list[dict[str, Any]], 
+        dense_model: str = "qwen3-0.6b",
+        sparse_model: str = "splade-pp-v2",
+        dense_instruction: str | None = None,
+        batch_size: int = 32,
+        text_field: str = "contextual_text",
+        disable_indexing: bool = True
     ) -> dict[str, int]:
         """
-        Upload documents to collection with batch processing.
+        Upload documents to collection with optimal batch processing
 
         Args:
+            collection_name: Target collection name
             documents: List of documents to upload
+                Format: [{"id": ..., "chunk_text": ..., "contextual_text": ..., "metadata": {...}}, ...]
+            dense_model: Dense embedding model ID
+            sparse_model: Sparse embedding model ID
+            dense_instruction: Optional instruction for dense embedding
             batch_size: Batch size for processing
+            text_field: Primary text field to embed
+            disable_indexing: Disable HNSW during upload (re-enable after)
 
         Returns:
-            Dictionary with success/failure counts
+            {"successful": count, "failed": count}
         """
         if not self.client:
             logger.error("Qdrant client not available")
             return {"successful": 0, "failed": 0}
 
+        total_docs = len(documents)
         successful_count = 0
         failed_count = 0
 
-        for i in tqdm(range(0, len(documents), batch_size), desc="Uploading document batches"):
-            batch = documents[i : i + batch_size]
-            points = []
+        logger.info(f"Uploading {total_docs} documents to '{collection_name}'")
+        logger.info(f"  Dense model: {dense_model}")
+        logger.info(f"  Sparse model: {sparse_model}")
+        logger.info(f"  Batch size: {batch_size}")
 
-            for doc in batch:
-                if not doc.get("id"):
-                    logger.warning(f"Document at index {i} has no ID, skipping")
-                    failed_count += 1
-                    continue
+        if disable_indexing:
+            logger.info("Disabling HNSW indexing for bulk upload...")
+            try:
+                await self.client.update_collection(
+                    collection_name=collection_name,
+                    hnsw_config=models.HnswConfigDiff(m=0)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to disable indexing: {e}")
 
-                try:
-                    text = doc.get("contextual_text")
-
-                    dense_embeddings_coro = self.api_client.embed(
-                        text=text,
-                        model_id=self.config.EMBEDDING_DENSE,
-                        prompt=self.config.INSTRUCTION_DOC,
-                    )
-                    sparse_embeddings_coro = self.api_client.embed(
-                        text=text,
-                        model_id=self.config.EMBEDDING_SPARSE,
-                    )
-                    dense_response, sparse_response = await asyncio.gather(
-                        dense_embeddings_coro, sparse_embeddings_coro
-                    )
-
-                    dense_embeddings = dense_response.get("embedding", [])
-                    sparse_embeddings = sparse_response.get("sparse_embedding", [])
-
-                    vectors = {
-                        self.config.DENSE_VECTOR_NAME: dense_embeddings,
-                        self.config.SPARSE_VECTOR_NAME: self._format_qdrant(sparse_embeddings),
-                    }
-
-                    point = models.PointStruct(
-                        id=doc.get("id"),
-                        vector=vectors,
-                        payload={
-                            "id": doc.get("id"),
-                            "chunk_text": doc.get("chunk_text", ""),
-                            "metadata": doc.get("metadata", {}),
-                            "upload_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        },
-                    )
-                    points.append(point)
-
-                except Exception as e:
-                    logger.error(f"Failed to process document {doc.get('id')}: {e}")
-                    failed_count += 1
-                    continue
-
-            if points:
-                try:
-                    await self.client.upsert(
-                        collection_name=self.config.COLLECTION,
-                        points=points,
-                    )
-                    successful_count += len(points)
-
-                except Exception as e:
-                    logger.error(f"Failed to upload batch: {e}")
-                    failed_count += len(points)
-
-        logger.success(
-            f"Upload complete: {successful_count} succeeded, {failed_count} failed to `{self.config.COLLECTION}`"
-        )
-
-        # Update HNSW configuration
-        logger.info("Update hnsw config...")
         try:
-            await self.update_collection(
-                hnsw_config=models.HnswConfigDiff(on_disk=True, ef_construct=64, m=32, payload_m=32)
-            )
-        except Exception as e:
-            logger.error(f"Failed to update collection configuration: {e}")
+            for i in async_tqdm(range(0, total_docs, batch_size), desc="Uploading batches"):
+                batch = documents[i:i + batch_size]
+                points = []
 
-        return {"successful": successful_count, "failed": failed_count}
+                texts = []
+                for doc in batch:
+                    text = doc.get(text_field, "")
+                    texts.append(text)
+
+                if dense_instruction:
+                    texts_dense = [f"{dense_instruction}: {text}" for text in texts]
+
+                try:
+                    dense_responses = await self.api_client.get_dense_embeddings(
+                        texts=texts_dense,
+                        model=dense_model
+                    )
+
+                    sparse_responses = await self.api_client.get_sparse_embeddings(
+                        texts=texts,
+                        model=sparse_model
+                    )
+
+                    for doc, dense_resp, sparse_resp in zip(batch, dense_responses, sparse_responses, strict=False):
+                        try:
+                            dense_embedding = self._parse_dense_embedding(dense_resp)
+                            sparse_dict = self._parse_sparse_embedding(sparse_resp)
+                            sparse_vector = self._format_sparse_for_qdrant(sparse_dict)
+
+                            point = models.PointStruct(
+                                id=doc.get("id"),
+                                vector={
+                                    self.DENSE_VECTOR_NAME: dense_embedding,
+                                    self.SPARSE_VECTOR_NAME: sparse_vector  # jika error ganti ini sparse_dict
+                                },
+                                payload={
+                                    "id": doc.get("id"),
+                                    "contextual_text": doc.get("contextual_text", ""),
+                                    "chunk_text": doc.get("chunk_text", ""),
+                                    "metadata": doc.get("metadata", {}),
+                                    "dense_model": dense_model,
+                                    "sparse_model": sparse_model,
+                                    "upload_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                }
+                            )
+                            points.append(point)
+
+                        except Exception as e:
+                            logger.error(f"Failed to process doc {doc.get('id')}: {e}")
+                            failed_count += 1
+                            continue
+
+                    # Upload batch
+                    if points:
+                        await self.client.upsert(
+                            collection_name=collection_name,
+                            points=points,
+                            wait=False
+                        )
+                        successful_count += len(points)
+                except Exception as e:
+                    logger.error(f"Failed to process batch: {e}")
+                    failed_count += len(batch)
+                    continue
+            
+            logger.success(f"Upload complete: {successful_count} succeeded, {failed_count} failed")
+
+            # Re-enable indexing
+            if disable_indexing:
+                logger.info("Re-enabling HNSW indexing...")
+                try:
+                    await self.client.update_collection(
+                        collection_name=collection_name,
+                        hnsw_config=models.HnswConfigDiff(m=8, ef_construct=32)
+                    )
+                    logger.info("Indexing re-enabled. Building index...")
+                except Exception as e:
+                    logger.error(f"Failed to re-enable indexing: {e}")
+
+            return {"successful": successful_count, "failed": failed_count}
+
+        except Exception as e:
+            logger.error(f"Upload failed: {e}")
+            return {"successful": successful_count, "failed": failed_count}
 
     async def search(
         self,
         query: str,
-        using_cohere: bool = False,
-        prefetch_limit: int = 20,
-        limit_reranker: int = 5,
-        use_reranking: bool = True,
+        collection_name: str,
+        dense_model: str = "qwen3-0.6b",
+        sparse_model: str = "splade-pp-v2",
+        dense_instruction: str | None = None,
+        top_k: int = 20,
+        use_reranking: bool = False,
+        rerank_model: str | None = "bge-v2-m3",
+        rerank_top_k: int = 10,
+        use_cohere: bool = False,
+        cohere_model: str = "rerank-english-v3.0"
     ) -> list[dict[str, Any]]:
         """
-        Search documents with hybrid retrieval and optional reranking.
+        Hybrid search dengan optimal performance
 
         Args:
-            query: Search query text
-            collection_name: Name of collection to search
-            using_cohere: Whether to use Cohere for reranking
-            prefetch_limit: Number of documents to retrieve initially
-            limit_reranker: Number of documents to return after reranking
-            use_reranking: Whether to apply reranking
+            query: Search query
+            collection_name: Collection name
+            dense_model: Dense embedding model
+            sparse_model: Sparse embedding model
+            dense_instruction: Dense embedding instruction
+            top_k: Initial retrieval count
+            use_reranking: Apply reranking
+            rerank_model: Reranking model ID
+            rerank_top_k: Final top-k after reranking
+            use_cohere: Use Cohere for reranking
+            cohere_model: Cohere rerank model
 
         Returns:
-            List of documents with complete information (id, score, text, metadata)
+            List of documents with scores
         """
         if not self.client:
             logger.error("Qdrant client not available")
             return []
 
+        start_time = time.perf_counter()
+
         try:
-            start_time = time.perf_counter()
+            logger.info("Generating query embeddings...")
 
-            dense_query_coro = self.api_client.query(
-                text=query,
-                model_id=self.config.EMBEDDING_DENSE,
-                prompt=self.config.INSTRUCTION_QUERY,
-            )
-            sparse_query_coro = self.api_client.query(
-                text=query,
-                model_id=self.config.EMBEDDING_SPARSE,
-            )
-            dense_query, sparse_query_raw = await asyncio.gather(
-                dense_query_coro, sparse_query_coro
-            )
-            sparse_embedding = sparse_query_raw.get("sparse_embedding", [])
-            sparse_query = self._format_qdrant(sparse_embedding)
+            start_embed = time.perf_counter()
 
-            prefetch_query = [
+            if dense_instruction:
+                query_dense = f"{dense_instruction}: {query}"
+
+            dense_task = self.api_client.get_dense_embeddings(
+                texts=[query_dense],
+                model=dense_model
+            )
+            sparse_task = self.api_client.get_sparse_embeddings(
+                texts=[query],
+                model=sparse_model
+            )
+            dense_resp, sparse_resp = await asyncio.gather(dense_task, sparse_task)
+
+            end_time = time.perf_counter() - start_embed
+            logger.info(f"Duration generate embedding & sparse: {end_time*1000:.1f}ms")
+
+            logger.info("Start execute hybrid search...")
+            start_query = time.perf_counter()
+
+            # Parse embeddings
+            dense_embedding = self._parse_dense_embedding(dense_resp[0])
+            sparse_dict = self._parse_sparse_embedding(sparse_resp[0])
+            sparse_vector = self._format_sparse_for_qdrant(sparse_dict)
+
+            # Prepare prefetch queries
+            prefetch_queries = [
                 models.Prefetch(
-                    query=np.array(dense_query["embedding"], dtype=np.float32),
-                    using=self.config.DENSE_VECTOR_NAME,
-                    limit=prefetch_limit,
+                    query=np.array(dense_embedding, dtype=np.float32),
+                    using=self.DENSE_VECTOR_NAME,
+                    limit=top_k
                 ),
                 models.Prefetch(
-                    query=models.SparseVector(**sparse_query),
-                    using=self.config.SPARSE_VECTOR_NAME,
-                    limit=prefetch_limit,
-                ),
+                    query=sparse_vector,
+                    using=self.SPARSE_VECTOR_NAME,
+                    limit=top_k
+                )
             ]
 
             # Execute hybrid search
             results = await self.client.query_points(
-                collection_name=self.config.COLLECTION,
+                collection_name=collection_name,
                 query=models.FusionQuery(fusion=models.Fusion.RRF),
-                prefetch=prefetch_query,
-                limit=prefetch_limit,
+                prefetch=prefetch_queries,
+                limit=top_k,
                 with_payload=True,
                 search_params=models.SearchParams(
+                    hnsw_ef=8,
+                    exact=False,
                     quantization=models.QuantizationSearchParams(
                         ignore=False,
-                        rescore=True,  # Enables rescoring with original vectors
-                        oversampling=2,  # Retrieves extra candidates for rescoring
+                        rescore=True,
+                        oversampling=2.0
                     )
-                ),
+                )
             )
 
-            document_list = []
+            documents = []
             for point in results.points:
                 doc = {
                     "id": point.id,
                     "score": point.score,
                     "chunk_text": point.payload.get("chunk_text", ""),
-                    "metadata": point.payload.get("metadata", {}),
+                    "contextual_text": point.payload.get("contextual_text", ""),
+                    "metadata": point.payload.get("metadata", {})
                 }
-                document_list.append(doc)
+                documents.append(doc)
+            
+            search_duration = time.perf_counter() - start_query
+            logger.info(f"🔍 Retrieved {len(documents)} results in {search_duration*1000:.1f}ms")
 
-            search_duration = time.perf_counter() - start_time
-            logger.info(
-                f"🔍 Retrieved {len(document_list)} results in {search_duration:.2f} seconds"
-            )
-
-            if use_reranking and len(document_list) > 1:
+            # Reranking
+            if use_reranking and len(documents) > 1:
                 rerank_start = time.perf_counter()
 
-                if using_cohere:
-                    logger.info(f"🔄 Reranking {len(document_list)} documents using Cohere...")
-
+                if use_cohere and self.co:
+                    logger.info(f"🔄 Reranking with Cohere ({cohere_model})...")
                     try:
                         rerank_results = self.co.rerank(
-                            model=self.config.COHERE_RANKER_MODEL,
+                            model=cohere_model,
                             query=query,
-                            documents=[doc["chunk_text"] for doc in document_list],
-                            top_n=limit_reranker,
+                            documents=[doc["chunk_text"] for doc in documents],
+                            top_n=rerank_top_k
                         )
 
-                        reranked_documents = []
+                        reranked_docs = []
                         for item in rerank_results.results:
-                            original_doc = document_list[item.index].copy()
+                            original_doc = documents[item.index].copy()
                             original_doc["rerank_score"] = float(item.relevance_score)
-                            reranked_documents.append(original_doc)
+                            reranked_docs.append(original_doc)
+
+                        documents = reranked_docs
 
                     except Exception as e:
                         logger.error(f"Cohere reranking failed: {e}")
-                        reranked_documents = document_list
 
-                else:
-                    logger.info(
-                        f"🔄 Reranking {len(document_list)} documents using {self.config.QWEN3_RANK}..."
-                    )
-
+                elif rerank_model:
+                    logger.info(f"🔄 Reranking with {rerank_model}...")
                     try:
-                        texts = [doc["chunk_text"] for doc in document_list]
-
-                        rerank_response = await self.api_client.rerank(
+                        rerank_resp = await self.api_client.rerank_documents(
                             query=query,
-                            documents=texts,
-                            model_id=self.config.QWEN3_RANK,
-                            prompt=self.config.INSTRUCTION_RERANK,
-                            top_k=limit_reranker,
+                            documents=[doc["chunk_text"] for doc in documents],
+                            model=rerank_model,
+                            top_k=rerank_top_k
                         )
 
-                        reranked_documents = []
-                        for rerank_result in rerank_response["results"]:
-                            original_doc = document_list[rerank_result["index"]].copy()
-                            original_doc["rerank_score"] = rerank_result["score"]
-                            reranked_documents.append(original_doc)
+                        reranked_docs = []
+                        for item in rerank_resp:
+                            original_doc = documents[item['index']].copy()
+                            original_doc["rerank_score"] = item['score']
+                            reranked_docs.append(original_doc)
+
+                        documents = reranked_docs
 
                     except Exception as e:
                         logger.error(f"Local reranking failed: {e}")
-                        reranked_documents = document_list
 
                 rerank_duration = time.perf_counter() - rerank_start
-                logger.info(f"🎯 Reranking completed in {rerank_duration:.2f} seconds")
+                logger.info(f"🎯 Reranking completed in {rerank_duration:.2f}s")
 
-                return reranked_documents
+            total_duration = time.perf_counter() - start_time
+            logger.success(f"✅ Total time: {total_duration:.2f}s")
 
-            else:
-                return document_list[:limit_reranker]
+            return documents
 
         except Exception as e:
-            logger.error(f"Error during query: {e}")
+            logger.error(f"Search failed: {e}")
+            import traceback
+            traceback.print_exc()
             return []
+    
+    def _parse_dense_embedding(self, response: Any) -> list[float]:
+        """
+        Parse dense embedding response dari API
 
-    async def get_info_collection(self) -> dict[str, Any]:
+        API Response format:
+        - List[float]: [0.1, 0.2, ...] -> return as-is
+        - Dict: {"embedding": [0.1, 0.2, ...]} -> extract
+
+        Args:
+            response: Response dari get_dense_embeddings
+
+        Returns:
+            List of floats
+        """
+        if isinstance(response, list):
+            # Direct list format
+            if isinstance(response[0], (int, float)):
+                return response
+            # List of embeddings [[...], [...]]
+            elif isinstance(response[0], list):
+                return response[0]
+        elif isinstance(response, dict):
+            # Dict format with 'embedding' key
+            if 'embedding' in response:
+                return response['embedding']
+            # Dict format with 'data' key (OpenAI-style)
+            elif 'data' in response:
+                return response['data'][0]['embedding']
+
+        logger.error(f"Unknown dense embedding format: {type(response)}")
+        raise ValueError(f"Cannot parse dense embedding: {response}")
+
+    def _parse_sparse_embedding(self, response: Any) -> dict[str, np.ndarray]:
+        """
+        Parse sparse embedding response from API and format for Qdrant
+
+        API Response formats:
+        1. List of dicts: [{"index": 123, "value": 0.5}, ...]
+        2. Nested list [[{"index": 123, "value": 0.5}, ...]]
+
+        Qdrant expects:
+        {
+            "indices": np.array([...], dtype=int32),
+            "values": np.array([...], dtype=float32)
+        }
+
+        Args:
+            response: Response from get_sparse_embeddings
+
+        Returns:
+            Dict with indices and values as numpy arrays
+        """
+        indices = []
+        values = []
+
+        # Format 1: List of dicts [{"index": 123, "value": 0.5}, ...]
+        if isinstance(response, list):
+            for item in response:
+                if isinstance(item, dict):
+                    # Handle both "index" and "indices"
+                    idx = item.get('index') or item.get('indices')
+                    val = item.get('value') or item.get('values')
+                    if idx is not None and val is not None:
+                        indices.append(idx)
+                        values.append(val)
+
+        # Format 2: Nested list [[{"index": 123, "value": 0.5}, ...]]
+        elif isinstance(response, list) and response and isinstance(response[0], list):
+            if response[0]: # Ensure the inner list is not empty
+                for item in response[0]:
+                    if isinstance(item, dict):
+                        idx = item.get('index')
+                        val = item.get('value')
+                        if idx is not None and val is not None:
+                            indices.append(idx)
+                            values.append(val)
+
+        if not indices or not values:
+            logger.warning("Empty sparse embedding, returning zeros")
+            return {
+                "indices": np.array([0], dtype=np.int32),
+                "values": np.array([0.0], dtype=np.float32)
+            }
+
+        return {
+            "indices": np.array(indices, dtype=np.int32),
+            "values": np.array(values, dtype=np.float32)
+        }
+
+    def _format_sparse_for_qdrant(self, sparse_dict: dict[str, np.ndarray]) -> models.SparseVector:
+        """
+        Format sparse dict to Qdrant SparseVector object
+
+        Args:
+            sparse_dict: Dict with 'indices' and 'values' as numpy arrays
+
+        Returns:
+            models.SparseVector object
+        """
+        return models.SparseVector(
+            indices=sparse_dict["indices"].tolist(),
+            values=sparse_dict["values"].tolist()
+        )
+
+    async def get_info_collection(self, collection_name: str) -> dict[str, Any]:
         """
         Get collection information and statistics.
 
@@ -416,14 +551,14 @@ class QdrantClientWrapper:
 
         try:
             info_collection = await self.client.get_collection(
-                collection_name=self.config.COLLECTION
+                collection_name=collection_name
             )
             return info_collection.model_dump()
         except Exception as e:
             logger.error(f"Error getting collection info: {e}")
             return {}
 
-    async def delete_collection(self) -> bool:
+    async def delete_collection(self, collection_name: str) -> bool:
         """
         Delete a collection.
 
@@ -438,14 +573,14 @@ class QdrantClientWrapper:
             return False
 
         try:
-            await self.client.delete_collection(self.config.COLLECTION)
-            logger.success(f"Successfully deleted collection `{self.config.COLLECTION}`")
+            await self.client.delete_collection(collection_name)
+            logger.success(f"Successfully deleted collection `{collection_name}`")
             return True
         except Exception as e:
             logger.error(f"Error deleting collection: {e}")
             return False
 
-    async def count_documents(self) -> int:
+    async def count_documents(self, collection_name: str) -> int:
         """
         Count documents in collection.
 
@@ -460,18 +595,18 @@ class QdrantClientWrapper:
             return 0
 
         try:
-            result = await self.client.count(self.config.COLLECTION)
+            result = await self.client.count(collection_name)
             return result.count
         except Exception as e:
             logger.error(f"Error counting documents: {e}")
             return 0
 
 
-_retriever_instance: QdrantClientWrapper | None = None
+_retriever_instance: QdrantVectoreStore | None = None
 
 
-def get_retriever_instance() -> QdrantClientWrapper:
+def get_retriever_instance() -> QdrantVectoreStore:
     global _retriever_instance
     if _retriever_instance is None:
-        _retriever_instance = QdrantClientWrapper()
+        _retriever_instance = QdrantVectoreStore()
     return _retriever_instance

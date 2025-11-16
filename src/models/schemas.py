@@ -22,14 +22,6 @@ class ChatRequest(BaseModel):
         description="Optional metadata for additional context.",
     )
 
-    # @field_validator("message")
-    # def validate_message(cls, v: str) -> str:
-    #     """Validate and sanitize message"""
-    #     cleaned = v.strip()
-    #     if not cleaned:
-    #         raise ValueError("Message cannot be empty or whitespace only")
-    #     return cleaned
-
     class Config:
         json_schema_extra = {
             "example": {

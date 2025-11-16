@@ -20,9 +20,11 @@ async def initialize_vector_store() -> bool:
         raw_documents = load_data(settings.DATA_PATH)
         documents = filter_non_header_documents(raw_documents)
 
-        await retriever.init_collection()
+        await retriever.create_collection(
+            collection_name=settings.COLLECTION, dimension=1024
+        )
 
-        doc_count = await retriever.count_documents()
+        doc_count = await retriever.count_documents(collection_name=settings.COLLECTION)
         logger.info(f"Current documents in vector store: {doc_count}")
 
         if doc_count == 0 or doc_count != len(documents):
@@ -32,9 +34,13 @@ async def initialize_vector_store() -> bool:
             settings.TOTAL_DOCUMENTS = len(documents)
             logger.info(f"Total documents to load: {settings.TOTAL_DOCUMENTS}")
 
-            await retriever.upload_collection(documents)
+            await retriever.upload_documents(
+                collection_name=settings.COLLECTION,
+                documents=documents,
+                dense_instruction=settings.INSTRUCTION_DOC
+            )
 
-            new_count = await retriever.count_documents()
+            new_count = await retriever.count_documents(collection_name=settings.COLLECTION)
             logger.success(f"Successfully loaded {new_count} documents")
         else:
             logger.info("Vector store is up to date")

@@ -6,7 +6,7 @@ from langgraph.types import Send
 from loguru import logger
 from tavily import AsyncTavilyClient
 
-from src.core import settings as config
+from src.core import settings
 from src.rag import prompts
 from src.rag.utils import _generate_uuid
 from src.rag.vector_db import get_retriever_instance
@@ -34,7 +34,7 @@ async def generate_queries(state: ResearcherState) -> dict[str, list[str]]:
         {"role": "human", "content": f"Original queries: {state.question}"},
     ]
 
-    llm = init_chat_model(model=config.MODEL_GPT_OSS_20B).with_structured_output(Response)
+    llm = init_chat_model(model=settings.MODEL_GPT_OSS_20B).with_structured_output(Response)
     response = cast(Response, await llm.ainvoke(messages))
     logger.info(f"generate queries: {response['queries']}")
     return {"queries": response["queries"]}
@@ -53,7 +53,15 @@ async def retrieve_documents(state: QueryState) -> list[dict[str, Any]]:
     """
     logger.info(f"queries: {state.query}")
     retriever = get_retriever_instance()
-    response = await retriever.search(state.query, prefetch_limit=10, using_cohere=True)
+    response = await retriever.search(
+        state.query, 
+        collection_name=settings.COLLECTION,
+        dense_instruction=settings.INSTRUCTION_QUERY,
+        top_k=20,
+        use_reranking=True,
+        use_cohere=False,
+        rerank_top_k=10
+    )
     return {"documents": response}
 
 
@@ -68,7 +76,7 @@ async def web_search(state: QueryState) -> list[dict[str, Any]]:
         dict[str, list[dict[str, Any]]]: A dictionary with a 'web_results' key containing the list of web search results.
     """
     logger.info(f"Performing web search for query: {state.query}")
-    client = AsyncTavilyClient(api_key=config.TAVILY_API_KEY)
+    client = AsyncTavilyClient(api_key=settings.TAVILY_API_KEY)
     search_results = await client.search(state.query, num_results=1, include_raw_content=False)
 
     format_documents = [
