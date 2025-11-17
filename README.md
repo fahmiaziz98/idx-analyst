@@ -100,9 +100,7 @@ Using **LlamaParse** for intelligent PDF parsing:
 
 ---
 
-## 🏗️ System Architecture
-
-### Workflow Overview
+## Workflow Overview
 
 <figure>
   <img src="static/rag.png" alt="Workflow RAG" width="600" height="620">
@@ -181,11 +179,11 @@ and equity of Rp 246,912 million, maintaining a debt-to-equity ratio of 4.0x
 consistent with Indonesian banking sector norms."
 ```
 
-## 📊 Evaluation Performance
+## Evaluation Performance
 
 ### Evaluation Methodology
 
-To rigorously test the system's effectiveness, we created a **manually curated evaluation dataset**:
+To rigorously test the system's effectiveness, we created a **manually curated evaluation dataset**
 
 #### Dataset Structure
 
@@ -231,52 +229,21 @@ To rigorously test the system's effectiveness, we created a **manually curated e
 - **Mean rank of 2.21** indicates the correct answer typically appears in position 2-3 with BGE
 - Both rerankers show strong **MRR-NDCG correlation (r > 0.95)**, validating ranking consistency
 
-#### Latency Comparison
-
-| Metric | BGE Rerank (CPU) | BGE Rerank (GPU Est.) | Cohere Rerank (API) | 
-|--------|------------------|----------------------|---------------------|
-| **P50 Latency** | 35,077 ms (~35s) | ~1,500 ms (~1.5s) | 3,172 ms (~3.2s) |
-| **P95 Latency** | 47,991 ms (~48s) | ~2,000 ms (~2s) | 6,935 ms (~7s) |
-| **Speed-up vs. CPU** | Baseline | **23x faster** | **11x faster** |
-
 > **⚡ Important Note on Latency:**  
 > The BGE reranker latency shown (35-48 seconds) reflects **CPU-only inference** in our development/POC environment. This is **not production performance**.
 >
 > **Production Deployment (GPU-accelerated):**
-> - Expected P50: **1-2 seconds** (23x improvement)
-> - Expected P95: **2-3 seconds**
+> - Expected P50: **0.5-1 seconds** (23x improvement)
+> - Expected P95: **1-2 seconds**
 > - Hardware: NVIDIA A10 or better
->
-> The high CPU latency is due to:
-> 1. **Cross-encoder architecture**: BGE uses full attention mechanism
-> 2. **No batch optimization**: Sequential processing in dev environment
-> 3. **Resource constraints**: Dev machines lack GPU acceleration
->
-> **In production, BGE with GPU will outperform Cohere API in both latency and accuracy.**
-
 ---
 
-### Trade-off Analysis
-
-#### 🎯 BGE Rerank (Production with GPU): **Recommended for Production**
+#### BGE Rerank (Production with GPU): **Recommended for Production**
 
 **Deployment Context:**
 - Hardware: NVIDIA T4, A10, or A100 GPU
 - Inference: Batch processing with TensorRT optimization
-- Expected latency: 1-2s (P50), 2-3s (P95)
-
-**Strengths:**
-- ✅ **Superior ranking accuracy**: 4.4% higher MRR, 3.7% higher NDCG
-- ✅ **Better early-position performance**: 76% Hit@3 vs. 60% (Cohere)
-- ✅ **Production-ready latency with GPU**: ~1.5s average response time
-- ✅ **No API costs**: Self-hosted, predictable infrastructure costs
-- ✅ **Data privacy**: All processing on-premises, no external API calls
-- ✅ **Scalability**: Batch inference can handle 1000+ req/min
-
-**Considerations:**
-- ⚠️ **Infrastructure investment**: Requires GPU server ($500-1500/month cloud)
-- ⚠️ **DevOps complexity**: Need to manage model deployment, scaling, monitoring
-- ⚠️ **Cold start**: Initial model loading takes 30-60 seconds
+- Expected latency: 0.5-1s (P50), 1-2s (P95)
 
 **Best For:**
 - Production chatbot systems with high query volume
@@ -286,24 +253,12 @@ To rigorously test the system's effectiveness, we created a **manually curated e
 
 ---
 
-#### ⚡ Cohere Rerank (API): **Ideal for MVP/Testing**
+#### Cohere Rerank (API): **Ideal for MVP/Testing**
 
 **Deployment Context:**
 - API-based, no infrastructure management
 - Pay-per-request pricing model
 - Out-of-the-box scalability
-
-**Strengths:**
-- ✅ **Zero infrastructure setup**: API call in 3 lines of code
-- ✅ **Fast time-to-market**: Deploy in hours, not days
-- ✅ **Reasonable accuracy**: 96% Hit@10, 64.8% MRR
-- ✅ **Elastic scaling**: Handles traffic spikes automatically
-- ✅ **Always up-to-date**: Cohere maintains and improves models
-
-**Considerations:**
-- ⚠️ **Variable costs**: I don't know how much 1M tokens cost.
-- ⚠️ **Data privacy**: Documents sent to Cohere servers
-- ⚠️ **Lower precision**: 60% Hit@3 vs. 76% (BGE)
 
 **Best For:**
 - MVP and prototyping phases
@@ -449,17 +404,9 @@ We welcome contributions from the community!
 This project builds upon cutting-edge research and industry best practices:
 
 ### Research Papers
-1. **[Contextual Retrieval (Anthropic, 2024)](https://www.anthropic.com/news/contextual-retrieval)**
-   - Core inspiration for context generation approach
-   - Demonstrates 67% reduction in retrieval failures
-
-2. **[SPLADE: Sparse Lexical and Expansion Model](https://arxiv.org/abs/2107.05720)**
-   - Naver Labs, 2021
-   - Combines sparse and dense representations
-
-3. **[BGE M3: Multi-Functionality, Multi-Linguality, Multi-Granularity](https://arxiv.org/abs/2402.03216)**
-   - BAAI, 2024
-   - State-of-the-art multilingual embedding and reranking
+**[Contextual Retrieval (Anthropic, 2024)](https://www.anthropic.com/news/contextual-retrieval)**
+- Core inspiration for context generation approach
+- Demonstrates 67% reduction in retrieval failures
 
 ### Tools & Frameworks
 - **[LangChain Documentation](https://python.langchain.com/)** - RAG patterns and best practices
