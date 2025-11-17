@@ -196,13 +196,13 @@ To rigorously test the system's effectiveness, we created a **manually curated e
 ### Performance Results
 
 <figure>
-  <table>
-    <tr>
-      <td><img src="static/hybrid_reranking.png" alt="Evaluation Retrieval 1"></td>
-      <td><img src="static/hybrid_reranking_cohere.png" alt="Evaluation Retrieval 2"></td>
-    </tr>
-  </table>
-  <figcaption>Figure 2: Performance of BGE (left) and Cohere (right)</figcaption>
+  <img src="static/hybrid_reranking.png" alt="Evaluation Retrieval 1">
+  <figcaption>Figure 1: Performance of BGE</figcaption>
+</figure>
+
+<figure>
+  <img src="static/hybrid_reranking_cohere.png" alt="Evaluation Retrieval 2">
+  <figcaption>Figure 2: Performance of Cohere<</figcaption>
 </figure>
 
 #### Hit Rate Comparison
@@ -289,7 +289,7 @@ To rigorously test the system's effectiveness, we created a **manually curated e
 
 ---
 
-## ⚙️ Tech Stack
+## Tech Stack
 
 ### Core Technologies
 
@@ -341,7 +341,7 @@ To rigorously test the system's effectiveness, we created a **manually curated e
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Docker 24+ and Docker Compose v2
@@ -374,7 +374,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 7860
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions from the community! 
 
@@ -399,7 +399,7 @@ We welcome contributions from the community!
 
 ---
 
-## 📚 References & Inspiration
+## References & Inspiration
 
 This project builds upon cutting-edge research and industry best practices:
 
@@ -421,10 +421,10 @@ This project builds upon cutting-edge research and industry best practices:
 - **Discussions**: [GitHub Discussions](https://github.com/fahmiaziz98/idx-analyst/discussions)
 ---
 
-## 📜 License
+## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📧 Contact & Support
+## Contact & Support
 
 - **Project Maintainer**: Fahmi Aziz Fadhil 
 - **Email**: [fahmiazizfadhil09@gmail.com](fahmiazizfadhil09@gmail.com)  
@@ -432,36 +432,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **GitHub**: [@fahmiaziz98](https://github.com/fahmiaziz98)
 
 ---
-
-## 🌟 Acknowledgments
-
-Special thanks to:
-- **Anthropic** for the contextual retrieval methodology
-- **Qdrant** team for the excellent vector database
-- **LlamaIndex** team for LlamaParse
-- Indonesian Stock Exchange (IDX) for public financial data
-- Open-source community for embedding and reranking models
-
----
-## 🎓 Citation
-
-If you use this project in your research or work, please cite:
-
-```bibtex
-@software{idx_analyst_2024,
-  title = {IDX-Analyst: Context-Aware RAG System for Indonesian Financial Reports},
-  author = {Fahmi Aziz Fadhil},
-  year = {2025},
-  url = {https://github.com/fahmiaziz98/idx-analyst},
-  note = {Agentic RAG financial document analysis system}
-}
-```
-
-<div align="center">
-
-### ⭐ Star this repository if you find it helpful!
-
-
-**Made by [Fahmi Aziz Fadhil](https://github.com/fahmiaziz98)** • **License: MIT**
-
-</div>
