@@ -1,9 +1,15 @@
-# 🧠 IDX-Analyst  
+# 🧠 IDX-Analyst
 **Context-Aware RAG System for Indonesian Financial Reports**
 
 > "Making sense of complex financial tables and documents shouldn't require hours of manual reading."
----
 
+[![Status](https://img.shields.io/badge/status-MVP-yellow)]()
+[![Python](https://img.shields.io/badge/python-3.11+-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-green)]()
+
+**Current Version:** 1.0.0 (MVP)
+
+---
 ## Motivation
 
 Indonesian stock market investors and analysts face a critical challenge: **extracting actionable insights from hundreds of pages of annual reports**. These documents contain vital information about company performance, but the data is often buried in:
@@ -42,7 +48,7 @@ Standard embedding models capture semantic similarity but **fail to preserve doc
 
 ---
 
-## Our Solution
+## Solution
 
 IDX-Analyst implements **Contextual Retrieval**, inspired by [Anthropic's contextual retrieval approach](https://www.anthropic.com/news/contextual-retrieval), with key innovations:
 
@@ -55,13 +61,12 @@ Before embedding each chunk, we generate **contextual summaries** using a specia
 
 **Example:**
 ```
-Original Chunk: "Total Assets: 1,234,567 (in millions)"
+Original Chunk: "Total Assets: 1,234,567 (in millions)...."
 
 Generated Context: "Bank BCA's consolidated balance sheet for FY 2023 
 shows total assets of Rp 1,234,567 million, representing a 12% YoY increase 
 driven by loan portfolio expansion in the consumer banking segment."
 
-Final Indexed Text: [Context] + [Original Chunk]
 ```
 
 ### 2. **Hybrid Retrieval with Context Awareness**
@@ -90,7 +95,7 @@ Using **LlamaParse** for intelligent PDF parsing:
 
 | Metric | Target | Current Performance |
 |--------|---------|---------------------|
-| Average Response Latency | < 10 seconds | 20s (Cohere), 180s+ (BGE w/ CPU) |
+| Average Response Latency | < 10 seconds | 7s (Cohere), 180s+ (BGE w/ CPU) |
 | Hit Rate @ Top-5 | ≥ 80% | 88% (BGE) |
 
 ### Success Metrics
@@ -100,7 +105,7 @@ Using **LlamaParse** for intelligent PDF parsing:
 
 ---
 
-## Workflow Overview
+## RAG Workflow
 
 <figure>
   <img src="static/rag.png" alt="Workflow RAG" width="600" height="620">
@@ -181,8 +186,6 @@ consistent with Indonesian banking sector norms."
 
 ## Evaluation Performance
 
-### Evaluation Methodology
-
 To rigorously test the system's effectiveness, we created a **manually curated evaluation dataset**
 
 #### Dataset Structure
@@ -238,54 +241,55 @@ To rigorously test the system's effectiveness, we created a **manually curated e
 > - Hardware: NVIDIA A10 or better
 ---
 
-#### BGE Rerank (Production with GPU): **Recommended for Production**
+## Embedding Strategy: MVP vs Production
 
-**Deployment Context:**
-- Hardware: NVIDIA T4, A10, or A100 GPU
-- Inference: Batch processing with TensorRT optimization
-- Expected latency: 0.5-1s (P50), 1-2s (P95)
+### **MVP Phase (Current)** 🚀
+**Goal:** Rapid development & model flexibility
 
-**Best For:**
-- Production chatbot systems with high query volume
-- Enterprise deployments with data sovereignty requirements
-- Cost-sensitive applications (high QPS makes GPU cost-effective)
-- Accuracy-critical financial advisory services
-
----
-
-#### Cohere Rerank (API): **Ideal for MVP/Testing**
-
-**Deployment Context:**
-- API-based, no infrastructure management
-- Pay-per-request pricing model
-- Out-of-the-box scalability
-
-**Best For:**
-- MVP and prototyping phases
-- Low-volume applications (<10K queries/month)
-- Teams without ML infrastructure expertise
-- Projects with strict deadlines
-
----
-
-### Key Takeaways
-
-| Criterion | Winner | Reasoning |
-|-----------|---------|-----------|
-| **Accuracy** | BGE | 4.4% higher MRR, 16% better Hit@3 |
-| **Production Latency** | BGE (GPU) | 0.5 - 1s |
-| **Cost Efficiency** | BGE | At scale, GPU amortizes vs. API costs |
-| **Data Privacy** | BGE | On-premises, no external API calls |
-| **Time to Market** | Cohere | Deploy in minutes vs. hours |
-| **Infrastructure** | Cohere | Zero DevOps overhead |
-
-**Final Recommendation:**
-- **For this project (portfolio/production):** Deploy **BGE with GPU**
-  - Rationale: Showcases technical depth, better accuracy, production-ready performance
-  - Investment: Adds credibility as a serious ML engineering project
+- **Embedding API:** [Unified Embedding API](https://github.com/fahmiaziz98/unified-embedding-api)
+  - **Rationale:** 
+    - Fast development iteration
+    - Easy model switching for accuracy testing
+    - Lower infrastructure cost during validation
+    - Flexible experimentation with different embedding models
+  - **Deployment:** Lightweight server (CPU-based is sufficient)
   
-- **For rapid prototyping:** Start with **Cohere**, migrate to **BGE + GPU** after validation
-  - Rationale: Validate product-market fit first, optimize infrastructure later
+- **Reranker:** Cohere API
+  - **Rationale:**
+    - Production-ready out-of-the-box
+    - No GPU infrastructure needed initially
+    - Easy integration for proof-of-concept
+    - Pay-as-you-go pricing suitable for MVP
+  
+- **Benefits:**
+  - ✅ Lower initial infrastructure cost
+  - ✅ Easy A/B testing of different models
+  - ✅ Focus on product validation over infrastructure
+
+---
+
+### **Production Phase (Planned)** 🏭
+**Goal:** Performance, cost optimization, full control
+
+- **Embedding Server:** Self-hosted on GPU (A10 or higher)
+  - **Models to Deploy:**
+    - Qwen/Qwen3-Embedding-0.6B
+    - prithivida/Splade_PP_en_v2
+    - BAAI/bge-reranker-v2-m3
+  - **Infrastructure:**
+    - GPU: NVIDIA A10 (24GB VRAM) or A100
+    - Batch processing for efficiency
+    - Model caching & optimization (Text-Inference-Embedding from HuggingFace)
+  - **Rationale:** 
+    - Cost savings at scale
+    - Lower latency
+    - Full control over model updates
+
+- **Benefits:**
+  - ✅ Lower cost per query at scale
+  - ✅ Better latency (no API roundtrip)
+  - ✅ Data privacy (all processing in-house)
+  - ✅ Custom model fine-tuning capability
 
 ---
 
@@ -352,6 +356,19 @@ To rigorously test the system's effectiveness, we created a **manually curated e
   - LlamaParse API key (for PDF parsing)
   - Cohere API key (optional, for Cohere reranker)
 
+### Parse Document using CLI
+```bash
+python src/document_processor/cli.py \
+  --input data/ADRO.pdf \
+  --ticker ADRO \
+  --company "PT Adaro Energy" \
+  --output data/processed \              # Directory (default)
+  --output-filename ALL_DATA.json \      # Filename (default)
+  --start-page 45 \                       # Optional
+  --end-page 50 \                         # Optional
+  --mode append                           # append (default) or new
+```
+
 ### Local Development Setup 
 
 ```bash
@@ -366,7 +383,7 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # 5. Run the API server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 7860
+make run
 ```
 ### Service URLs
 - **API Docs (Swagger)**: http://localhost:7860/docs
