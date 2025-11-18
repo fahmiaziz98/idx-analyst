@@ -263,7 +263,7 @@ To rigorously test the system's effectiveness, we created a **manually curated e
   
 - **Benefits:**
   - ✅ Lower initial infrastructure cost
-  - ✅ Easy A/B testing of different models
+  - ✅ Easy testing of different models
   - ✅ Focus on product validation over infrastructure
 
 ---
