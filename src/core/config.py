@@ -11,42 +11,33 @@ class Settings(BaseSettings):
     Application configuration.
     """
 
-    # ==================== API Configuration ====================
     API_TITLE: str = "IDX-Analyst RAG API"
     API_VERSION: str = "1.0.0"
     API_DESCRIPTION: str = "MVP RAG system for Indonesian financial reports"
     ENVIRONMENT: str = Field(default="development", pattern="^(development|staging|production)$")
 
-    # ==================== Security Configuration ====================
     API_KEYS_ENCRYPTED: Optional[str] = None
     ENCRYPTION_KEY: Optional[str] = None
     API_KEYS: Optional[str] = None
 
-    ALLOWED_ORIGINS: str = "*"
-
-    # ==================== Server Configuration ====================
     HOST: str = "0.0.0.0"
     PORT: int = Field(default=7860, ge=1024, le=65535)
     WORKERS: int = Field(default=4, ge=1, le=32)
+    ALLOWED_ORIGINS: str = "*"
 
-    # ==================== Rate Limiting ====================
     RATE_LIMIT_REQUESTS: int = Field(default=100, ge=1, le=10000)
     RATE_LIMIT_WINDOW: int = Field(default=60, ge=1, le=3600)
 
-    # ==================== LLM Models ====================
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.0-flash"
 
-    # ==================== Data Configuration ====================
     DATA_PATH: str = "data/COMBINED_DATA.json"
     TOTAL_DOCUMENTS: int = 0
 
-    # ==================== External API Keys ====================
     COHERE_API_KEY: Optional[str] = None
     TAVILY_API_KEY: Optional[str] = None
     LLAMA_PARSE_KEY: Optional[str] = None
 
-    # ==================== Embedding Service ====================
     EMBEDDING_API_URL: str 
     INSTRUCTION_DOC: str = (
         "This is a passage from the annual financial report "
@@ -57,28 +48,23 @@ class Settings(BaseSettings):
         "from annual reports of Indonesian public companies"
     )
 
-    # ==================== Qdrant Configuration ====================
     QDRANT_API_KEY: Optional[str] = None
     QDRANT_BASE_URL: str
     COLLECTION: str = "document"
 
-    # ==================== Circuit Breaker Configuration ====================
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=5, ge=1, le=20)
     CIRCUIT_BREAKER_SUCCESS_THRESHOLD: int = Field(default=2, ge=1, le=10)
     CIRCUIT_BREAKER_TIMEOUT: int = Field(default=60, ge=10, le=600)
 
-    # ==================== Memory Management ====================
     MAX_RESPONSE_SIZE: int = Field(default=50_000, ge=1_000, le=500_000)
     MAX_BUFFER_ITEMS: int = Field(default=1_000, ge=100, le=10_000)
     MEMORY_WARNING_THRESHOLD_MB: int = Field(default=500, ge=100, le=2000)
     MEMORY_CRITICAL_THRESHOLD_MB: int = Field(default=1000, ge=200, le=4000)
 
-    # ==================== Monitoring ====================
     ENABLE_METRICS: bool = True
     ENABLE_HEALTH_CHECKS: bool = True
     LOG_LEVEL: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
 
-    # ==================== Pydantic v2 Configuration ====================
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
