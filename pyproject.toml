@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cohere>=5.19.0",
+    "cryptography>=46.0.3",
     "fastapi==0.116.2",
     "httpx==0.28.1",
     "jupyter>=1.1.1",
@@ -21,6 +22,7 @@ dependencies = [
     "pandas>=2.3.3",
     "pydantic-settings==2.11.0",
     "pymupdf==1.26.4",
+    "python-jose[cryptography]>=3.5.0",
     "qdrant-client==1.15.1",
     "seaborn>=0.13.2",
     "sse-starlette==1.6.5",
