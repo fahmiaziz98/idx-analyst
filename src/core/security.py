@@ -169,7 +169,7 @@ class SecureAPIKeyManager:
         # TODO
         # Simple rate limit check - in production use Redis
         requests_per_second = metadata.usage_count / max(time_since_last_use, 1)
-        max_requests_per_second = metadata.rate_limit / 60
+        max_requests_per_second = metadata.rate_limit #/ 60
 
         return requests_per_second > max_requests_per_second
 

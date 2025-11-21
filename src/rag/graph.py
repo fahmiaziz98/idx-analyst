@@ -69,7 +69,7 @@ async def ask_for_more_info(state: AgentState) -> dict[str, list[BaseMessage]]:
     """
     logger.info(f"node ask_for_more_info, messages => {state.messages[-1].content}")
 
-    model = init_chat_model(config.MODEL_GEMINI_FLASH)
+    model = init_chat_model(config.MODEL_GEMINI_FLASH, max_tokens=2048, temperature=0.7)
     system_prompt = MORE_INFO_SYSTEM_PROMPT.format(logic=state.router["logic"])
     messages = [{"role": "system", "content": system_prompt}] + state.messages
     response = await model.ainvoke(messages)
@@ -89,7 +89,7 @@ async def respond_to_general_query(state: AgentState) -> dict[str, list[BaseMess
     """
     logger.info(f"node respond_to_general_query, messages => {state.messages[-1].content}")
     system_prompt = GENERAL_SYSTEM_PROMPT.format(logic=state.router["logic"])
-    model = init_chat_model(config.MODEL_GEMINI_FLASH)
+    model = init_chat_model(config.MODEL_GEMINI_FLASH, max_tokens=2048, temperature=0.7)
     messages = [{"role": "system", "content": system_prompt}] + state.messages
     response = await model.ainvoke(messages)
     return {"messages": [response]}
@@ -127,7 +127,7 @@ async def respond(state: AgentState) -> dict[str, list[BaseMessage]]:
     logger.info(f"node respond, messages => {state.messages[-1].content}")
     context = format_docs(state.documents)
     prompt = RESPONSE_SYSTEM_PROMPT.format(context=context)
-    model = init_chat_model(config.MODEL_GEMINI_FLASH)
+    model = init_chat_model(config.MODEL_GEMINI_FLASH, max_tokens=4096, temperature=0.7)
     messages = [{"role": "system", "content": prompt}] + state.messages
     response = await model.ainvoke(messages)
     return {"messages": [response]}
