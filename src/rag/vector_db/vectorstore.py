@@ -11,7 +11,7 @@ from qdrant_client import AsyncQdrantClient, models
 from tqdm.asyncio import tqdm as async_tqdm
 
 from src.core import settings
-from src.rag.embedding_client import EmbeddingAPIClient
+from src.rag.embedding_client import EmbeddingAPIClient, get_embedding_client
 
 
 class QdrantVectoreStore:
@@ -37,9 +37,10 @@ class QdrantVectoreStore:
             is_local: Whether to use local Qdrant instance
         """
         self.config = settings
-        self.api_client = EmbeddingAPIClient(
-            base_url=config.EMBEDDING_API_URL
-        )
+        # self.api_client = EmbeddingAPIClient(
+        #     base_url=config.EMBEDDING_API_URL
+        # )
+        self.api_client = get_embedding_client()
         self.co = cohere.Client(self.config.COHERE_API_KEY)
 
         self.DENSE_VECTOR_NAME = "dense"
