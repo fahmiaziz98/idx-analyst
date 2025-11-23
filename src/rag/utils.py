@@ -15,7 +15,8 @@ def _format_docs(doc: dict[str, Any]) -> str:
     meta = "".join(f" {k}={v!r}" for k, v in metadata.items())
     if meta:
         meta = f" {meta}"
-    return f"<document{meta}>\n{doc['chunk_text']}</document>"
+    # contextual_text
+    return f"<document{meta}>\nsummary: {doc.get('contextual_text', '')}\n\ndocument: {doc['chunk_text']}</document>"  
 
 
 def format_docs(docs: list[dict[str, Any]] | None) -> str:
