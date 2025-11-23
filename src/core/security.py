@@ -147,31 +147,31 @@ class SecureAPIKeyManager:
         key_hash = self.hash_api_key(api_key)
         return self._key_metadata.get(key_hash)
     
-    def is_rate_limited(self, api_key: str, window_seconds: int = 60) -> bool:
-        """
-        Check if an API key is rate limited.
+    # def is_rate_limited(self, api_key: str, window_seconds: int = 60) -> bool:
+    #     """
+    #     Check if an API key is rate limited.
 
-        Args:
-            api_key: The API key.
-            window_seconds: The time window in seconds.
+    #     Args:
+    #         api_key: The API key.
+    #         window_seconds: The time window in seconds.
 
-        Returns:
-            bool: True if the API key is rate limited, False otherwise.
-        """
-        metadata = self.get_key_metadata(api_key)
-        if not metadata or not metadata.last_used:
-            return False
+    #     Returns:
+    #         bool: True if the API key is rate limited, False otherwise.
+    #     """
+    #     metadata = self.get_key_metadata(api_key)
+    #     if not metadata or not metadata.last_used:
+    #         return False
         
-        time_since_last_use = (datetime.now() - metadata.last_used).total_seconds()
-        if time_since_last_use > window_seconds:
-            return False
+    #     time_since_last_use = (datetime.now() - metadata.last_used).total_seconds()
+    #     if time_since_last_use > window_seconds:
+    #         return False
 
-        # TODO
-        # Simple rate limit check - in production use Redis
-        requests_per_second = metadata.usage_count / max(time_since_last_use, 1)
-        max_requests_per_second = metadata.rate_limit #/ 60
+    #     # TODO
+    #     # Simple rate limit check - in production use Redis
+    #     requests_per_second = metadata.usage_count / max(time_since_last_use, 1)
+    #     max_requests_per_second = metadata.rate_limit #/ 60
 
-        return requests_per_second > max_requests_per_second
+    #     return requests_per_second > max_requests_per_second
 
 # Global instance
 api_key_manager = SecureAPIKeyManager()
@@ -215,73 +215,13 @@ async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
             headers={"WWW-Authenticate": "ApiKey"},
         )
     
-    # check rate limit
-    if api_key_manager.is_rate_limited(api_key):
-        logger.warning(f"Rate limited API key: {api_key[:6]}")
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
+    # # check rate limit
+    # if api_key_manager.is_rate_limited(api_key):
+    #     logger.warning(f"Rate limited API key: {api_key[:6]}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+    #         detail="Rate limit exceeded",
+    #         headers={"WWW-Authenticate": "ApiKey"},
+    #     )
     
     return api_key
-
-def generate_secure_api_key(prefix: str = "sk") -> str:
-    """
-    Generate cryptographically secure API key.
-    
-    Args:
-        prefix: Key prefix (default: 'sk' for secret key)
-        
-    Returns:
-        Secure random API key
-    """
-    random_bytes = secrets.token_urlsafe(32)
-    return f"{prefix}_{random_bytes}"
-
-
-# CLI utility functions for key management
-def encrypt_keys_cli():
-    """CLI utility to encrypt API keys."""
-    print("🔐 API Key Encryption Utility")
-    print("=" * 50)
-
-    keys_input = input("Enter API keys (comma-separated): ")
-    keys = [k.strip() for k in keys_input.split(",") if k.strip()]
-
-    if not keys:
-        print("❌ No keys provided")
-        return
-
-    manager = SecureAPIKeyManager()
-    encrypted = manager.encrypt_api_keys(keys)
-
-    print("\n✅ Keys encrypted successfully!")
-    print("\nAdd this to your .env file:")
-    print(f"API_KEYS_ENCRYPTED={encrypted}")
-    print("\nAnd the encryption key:")
-    print(f"ENCRYPTION_KEY={manager.encryption_key.decode()}")
-
-
-def generate_key_cli():
-    """CLI utility to generate new API key."""
-    print("🔑 API Key Generation Utility")
-    print("=" * 50)
-
-    new_key = generate_secure_api_key()
-    print(f"\n✅ Generated API key:\n{new_key}")
-    print("\n⚠️  Save this key securely - it cannot be recovered!")
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "encrypt":
-            encrypt_keys_cli()
-        elif sys.argv[1] == "generate":
-            generate_key_cli()
-        else:
-            print("Usage: python security.py [encrypt|generate]")
-    else:
-        print("Usage: python security.py [encrypt|generate]")
