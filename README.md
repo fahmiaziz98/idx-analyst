@@ -1,451 +1,327 @@
-# 🧠 IDX-Analyst
+# IDX-Analyst
+
 **Context-Aware RAG System for Indonesian Financial Reports**
 
-> "Making sense of complex financial tables and documents shouldn't require hours of manual reading."
+> Making sense of complex financial tables and documents shouldn't require hours of manual reading.
 
 [![Status](https://img.shields.io/badge/status-MVP-yellow)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
-**Current Version:** 1.0.0 (MVP)
-
----
-## Motivation
-
-Indonesian stock market investors and analysts face a critical challenge: **extracting actionable insights from hundreds of pages of annual reports**. These documents contain vital information about company performance, but the data is often buried in:
-
-- Complex financial tables spanning multiple pages
-- Dense text mixing qualitative and quantitative information
-- Technical accounting terminology and regulatory disclosures
-- Inconsistent formatting across different companies
-
-Traditional RAG systems struggle with financial documents because:
-- **Standard chunking breaks table context**, making numerical data unretrievable
-- **Semantic search fails on tabular data** where structure matters more than semantics
-- **Lexical matching misses implicit relationships** between financial concepts
-
-**IDX-Analyst** was built to solve these problems by introducing **contextual retrieval** specifically designed for structured financial documents.
+**Version:** 1.0.0 (MVP)
 
 ---
 
-## The Challenge
+## Overview
 
-### Problem 1: Table Retrieval Failure
-When financial tables are chunked into a vector database, queries like *"What is Bank BCA's total debt in 2023?"* often return **irrelevant results** because:
+IDX-Analyst is a context-aware RAG (Retrieval-Augmented Generation) system designed to extract actionable insights from Indonesian corporate financial reports. It solves the challenge of retrieving accurate financial data from complex documents by preserving context during the retrieval process.
 
-- Row/column relationships are destroyed during chunking
-- Numbers lose their semantic meaning without headers
-- Multi-page tables get fragmented across chunks
+**Key Problem:** Investors and analysts spend hours manually reading through hundreds of pages of annual reports to find critical financial information. Traditional RAG systems fail because they lose context when splitting documents into chunks, making numerical data unretrievable.
 
-### Problem 2: Context Loss
-Financial documents require understanding:
-- Which company the data refers to
-- Which fiscal year is being discussed  
-- Which section of the report (Balance Sheet vs. Cash Flow)
-- The relationship between multiple tables
-
-Standard embedding models capture semantic similarity but **fail to preserve document structure and metadata context**.
+**Our Solution:** We implement **contextual retrieval** inspired by Anthropic's approach, adding explanatory context to each chunk before embedding, which reduces retrieval failures by up to 67% when combined with reranking.
 
 ---
 
-## Solution
+## Why This Matters
 
-IDX-Analyst implements **Contextual Retrieval**, inspired by [Anthropic's contextual retrieval approach](https://www.anthropic.com/news/contextual-retrieval), with key innovations:
+### The Challenge with Traditional RAG
 
-### 1. **Contextual Text Generation**
-Before embedding each chunk, we generate **contextual summaries** using a specialized LLM prompt that includes:
+Indonesian stock market investors face three critical obstacles:
+
+**1. Complex Document Structure**
+- Financial tables span multiple pages with inconsistent formatting
+- Dense text mixes qualitative narratives with quantitative metrics
+- Technical accounting terminology and regulatory disclosures obscure key data
+
+**2. Standard RAG Failures**
+- Chunking breaks table structure, destroying row/column relationships
+- Numbers lose semantic meaning without proper context
+- Multi-page tables fragment across chunks, making retrieval inaccurate
+
+**3. Lost Context**
+- Queries can't determine which company or fiscal year is referenced
+- Relationships between balance sheet, income statement, and cash flow sections are broken
+- Financial context (YoY growth, segment breakdown) disappears
+
+**Example of the Problem:**
+```
+Query: "What is Bank BCA's total debt in 2023?"
+
+Traditional RAG might retrieve:
+"Total liabilities: Rp 987,654 million"
+(Missing: company name, fiscal year, context that this is a banking sector metric)
+```
+
+---
+
+## Solution: Contextual Retrieval
+
+IDX-Analyst implements three core innovations:
+
+### 1. Contextual Text Generation
+
+Before embedding, we generate rich context using specialized LLM prompts that include:
 - Company identification and business segment
 - Specific financial metrics and reporting periods
-- Year-over-year or quarter-over-quarter comparisons
+- Year-over-year comparisons and trends
 - Market position and strategic context
 
-**Example:**
+**Example Transformation:**
 ```
-Original Chunk: "Total Assets: 1,234,567 (in millions)...."
+Original Chunk:
+"Total Assets: 1,234,567 (in millions)"
 
-Generated Context: "Bank BCA's consolidated balance sheet for FY 2023 
-shows total assets of Rp 1,234,567 million, representing a 12% YoY increase 
-driven by loan portfolio expansion in the consumer banking segment."
+Generated Context:
+"Bank BCA's consolidated balance sheet for FY 2023 shows total assets 
+of Rp 1,234,567 million, representing a 12% YoY increase driven by 
+loan portfolio expansion in consumer banking."
 
+→ This contextualized chunk is then embedded and indexed
 ```
 
-### 2. **Hybrid Retrieval with Context Awareness**
-- **Dense Retrieval (Qwen 0.6B)**: Captures semantic meaning of contextualized chunks
-- **Sparse Retrieval (SPLADE-PP-V2)**: Matches specific financial terms and numbers
-- **Context-Aware Reranking (BGE-M3)**: Prioritizes results with matching metadata and relevance
+### 2. Hybrid Retrieval with Reranking
 
-### 3. **Table-Aware Document Processing**
-Using **LlamaParse** for intelligent PDF parsing:
-- Preserves complex table structures
-- Maintains header-row relationships across pages
-- Extracts nested tables and multi-level hierarchies
-- Handles merged cells and irregular layouts
+- **Dense Retrieval (Qwen 0.6B):** Captures semantic relationships in contextualized chunks
+- **Sparse Retrieval (SPLADE-PP-V2):** Matches specific financial terms and numbers
+- **Context-Aware Reranking (BGE-M3):** Prioritizes results with matching metadata and highest relevance
+
+### 3. Intelligent PDF Processing
+
+Using **LlamaParse** for advanced PDF parsing that:
+- Preserves complex table structures (headers, rows, columns)
+- Maintains relationships across multi-page tables
+- Handles nested tables and irregular layouts
+- Extracts data with accurate unit preservation
 
 ---
 
-## Goals & Objectives
-
-### Primary Goals
-1. **Enable accurate retrieval of financial data from tables** without manual document reading
-2. **Maintain context across document sections** to prevent fragmented answers
-3. **Support natural language queries** from both technical and non-technical users
-4. **Achieve production-grade performance** suitable for real-time applications
-
-### Service Level Objectives (SLOs)
-
-| Metric | Target | Current Performance |
-|--------|---------|---------------------|
-| Average Response Latency | < 10 seconds | 7s (Cohere), 180s+ (BGE w/ CPU) |
-| Hit Rate @ Top-5 | ≥ 80% | 88% (BGE) |
-
-### Success Metrics
-- ✅ **96% Hit Rate @ Top-10**: Correct answer appears in top 10 results
-- ✅ **69.2% MRR with BGE Rerank**: High ranking precision
-- ✅ **Mean rank of 2.21**: Relevant results consistently appear in top 3 positions
-
----
-
-## RAG Workflow
-
+## Performance Metrics
 <figure>
-  <img src="static/rag.png" alt="Workflow RAG" width="600" height="620">
-  <figcaption>Figure 1: Context-Aware RAG Pipeline</figcaption>
-</figure>
-
-### Data Storage Architecture
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Vector Store | **Qdrant** | Stores dense + sparse embeddings with 1024-dim vectors |
-| Metadata Index | **Qdrant Payload** | Company, tickers, chunk_text, document |
-| Document Parser | **LlamaParse** | PDF → structured text/table extraction (separate service) |
-
----
-
-## 🔍 Contextual Retrieval Innovation
-
-### Context Generation Process
-
-#### Our Specialized Prompt
-
-We use a **domain-specific prompt** designed for Indonesian financial reports:
-
-```python
-CONTEXT_GENERATION_PROMPT = """
-You are an Investment Manager who specializes in financial analysis, 
-specifically for Indonesian stocks. Your job is to provide brief and 
-relevant context for the snippets of text from the stock's annual report.
-
-<company_name>
-{company_name}
-</company_name>
-
-<document>
-{document}
-</document>
-
-Here is the chunk we want to situate within the whole document:
-<chunk>
-{chunk}
-</chunk>
-
-Provide a concise context (1-3 sentences) considering these guidelines:
-1. Identify the company name (MUST), financial metric/topic discussed 
-   (revenue, ROE, debt ratio, cash flow, total assets, etc.)
-2. Specify the reporting period (Q1/Q2/Q3/Q4 2023, FY 2022, etc.) 
-   and any comparisons (YoY, QoQ)
-3. Note the business segment if applicable (banking, telecommunications, 
-   consumer goods, etc.)
-4. If relevant, mention how this relates to company's overall performance, 
-   strategy, or Indonesian market position
-5. Do not use phrases such as "This section discusses" or "This section 
-   provides". Instead, state the context directly.
-
-Please give a short succinct context to situate this chunk within the 
-overall document for the purposes of improving search retrieval of the 
-chunk. Answer only with the succinct context and nothing else.
-"""
-```
-
-#### Example Context Generation
-
-**Input:**
-```
-Company: PT Bank Central Asia Tbk (BCA)
-Document: Annual Report 2023 - Consolidated Financial Statements
-Chunk: "Total liabilities: Rp 987,654 million
-        Total equity: Rp 246,912 million"
-```
-
-**Generated Context:**
-```
-"Bank BCA's FY 2023 balance sheet shows total liabilities of Rp 987,654 million 
-and equity of Rp 246,912 million, maintaining a debt-to-equity ratio of 4.0x 
-consistent with Indonesian banking sector norms."
-```
-
-## Evaluation Performance
-
-To rigorously test the system's effectiveness, we created a **manually curated evaluation dataset**
-
-#### Dataset Structure
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| `id` | Unique document identifier | "222" |
-| `question` | Natural language query in Indonesian | "Berapa total aset Bank BCA tahun 2023?" |
-| `context` | Expected relevant document chunk | "Laporan Posisi Keuangan Konsolidasian..." |
-| `answer` | Reference answer for validation | "Rp 1,234.5 triliun" |\
-### Performance Results
-
-<figure>
-  <img src="static/hybrid_reranking.png" alt="Evaluation Retrieval 1">
-  <figcaption>Figure 1: Performance of BGE</figcaption>
+  <img src="static/hybrid_reranking.png" alt="Hybrid Reranking" style="width:100%;">
+  <figcaption>Figure 2: Performance of BGE </figcaption>
 </figure>
 
 <figure>
-  <img src="static/hybrid_reranking_cohere.png" alt="Evaluation Retrieval 2">
-  <figcaption>Figure 2: Performance of Cohere<</figcaption>
+  <img src="static/hybrid_reranking_cohere.png" alt="Cohere Reranking" style="width:100%;">
+  <figcaption>Figure 3: Performance of Cohere</figcaption>
 </figure>
 
-#### Hit Rate Comparison
-
-| Metric | BGE Rerank | Cohere Rerank | Improvement |
-|--------|------------|---------------|-------------|
-| **Hit@3**  | 76.0%      | 60.0%         | BGE +16% |
-| **Hit@5**  | 88.0%      | 80.0%         | BGE +8% |
-| **Hit@10** | 96.0%      | 96.0%         | Equal |
-| **Hit@20** | 96.0%      | 96.0%         | Equal |
-
-**Key Insight:** BGE Rerank excels at placing the correct answer in **early positions (Top-3, Top-5)**, reducing the need for extensive result scanning.
-
-#### Ranking Quality Metrics
+Our evaluation on 25 manually curated queries shows strong retrieval accuracy:
 
 | Metric | BGE Rerank | Cohere Rerank | Winner |
-|--------|------------|---------------|---------|
-| **MRR** (Mean Reciprocal Rank) | 69.2% | 64.8% | BGE (+4.4%) |
-| **NDCG@10** | 75.7% | 72.0% | BGE (+3.7%) |
+|--------|-----------|---------------|---------|
+| **Hit@3** | 76.0% | 60.0% | BGE +16% |
+| **Hit@5** | 88.0% | 80.0% | BGE +8% |
+| **Hit@10** | 96.0% | 96.0% | Equal |
+| **MRR** (Mean Reciprocal Rank) | 69.2% | 64.8% | BGE +4.4% |
 | **Mean Rank Position** | 2.21 | 2.83 | BGE (lower is better) |
 
-**Analysis:**
-- BGE achieves **higher precision in ranking**, meaning the most relevant answer appears earlier
-- **Mean rank of 2.21** indicates the correct answer typically appears in position 2-3 with BGE
-- Both rerankers show strong **MRR-NDCG correlation (r > 0.95)**, validating ranking consistency
+**Key Finding:** BGE reranker consistently places the correct answer in top 2-3 positions, reducing user scrolling through irrelevant results.
 
-> **⚡ Important Note on Latency:**  
-> The BGE reranker latency shown (35-48 seconds) reflects **CPU-only inference** in our development/POC environment. This is **not production performance**.
->
-> **Production Deployment (GPU-accelerated):**
-> - Expected P50: **0.5-1 seconds** (23x improvement)
-> - Expected P95: **1-2 seconds**
-> - Hardware: NVIDIA A10 or better
----
-
-## Embedding Strategy: MVP vs Production
-
-### **MVP Phase (Current)** 🚀
-**Goal:** Rapid development & model flexibility
-
-- **Embedding API:** [Unified Embedding API](https://github.com/fahmiaziz98/unified-embedding-api)
-  - **Rationale:** 
-    - Fast development iteration
-    - Easy model switching for accuracy testing
-    - Lower infrastructure cost during validation
-    - Flexible experimentation with different embedding models
-  - **Deployment:** Lightweight server (CPU-based is sufficient)
-  
-- **Reranker:** Cohere API
-  - **Rationale:**
-    - Production-ready out-of-the-box
-    - No GPU infrastructure needed initially
-    - Easy integration for proof-of-concept
-    - Pay-as-you-go pricing suitable for MVP
-  
-- **Benefits:**
-  - ✅ Lower initial infrastructure cost
-  - ✅ Easy testing of different models
-  - ✅ Focus on product validation over infrastructure
+> **Production Latency:** Current latency reflects CPU-only inference. GPU deployment (NVIDIA A10+) will achieve P50: 0.5-1 second (23x faster).
 
 ---
 
-### **Production Phase (Planned)** 🏭
-**Goal:** Performance, cost optimization, full control
+## Data Sources & Companies
 
-- **Embedding Server:** Self-hosted on GPU (A10 or higher)
-  - **Models to Deploy:**
-    - Qwen/Qwen3-Embedding-0.6B
-    - prithivida/Splade_PP_en_v2
-    - BAAI/bge-reranker-v2-m3
-  - **Infrastructure:**
-    - GPU: NVIDIA A10 (24GB VRAM) or A100
-    - Batch processing for efficiency
-    - Model caching & optimization (Text-Inference-Embedding from HuggingFace)
-  - **Rationale:** 
-    - Cost savings at scale
-    - Lower latency
-    - Full control over model updates
+We evaluate IDX-Analyst using consolidated financial statements from six major Indonesian public companies across different sectors:
 
-- **Benefits:**
-  - ✅ Lower cost per query at scale
-  - ✅ Better latency (no API roundtrip)
-  - ✅ Data privacy (all processing in-house)
-  - ✅ Custom model fine-tuning capability
+| Company | Ticker | Sector | Report Type |
+|---------|--------|--------|-------------|
+| **PT Aneka Tambang (Antam)** | ANTM | Mining | Annual Report 2024 |
+| **Bank Jago** | ARTO | Digital Banking | Annual Report 2024 |
+| **Bank Central Asia** | BBCA | Banking | Annual Report 2024 |
+| **Bank Rakyat Indonesia** | BBRI | Banking | Annual Report 2024 |
+| **PT Astra International** | ASII | Automotif | Annual Report 2024 |
+| **PT Alamtri Resources** | ADRO | Resources/Mining | Annual Report 2024 |
+
+### Data Selection Criteria
+
+- **[Source](https://idx.co.id/en/listed-companies/financial-statements-and-annual-report/):** Indonesian Stock Exchange (IDX) official portal
+- **Document Type:** Consolidated Financial Statements only
+- **Coverage:** Balance Sheets, Income Statements, Cash Flow Statements, Notes
+- **Pages:** Maximum 20 pages per document (most relevant sections)
+- **Period:** 2024 annual reports
+
+All financial data is extracted from publicly available annual reports with permission from the IDX.
 
 ---
 
 ## Tech Stack
 
-### Core Technologies
-
 | Component | Technology | Version | Purpose |
-|-----------|------------|---------|---------|
+|-----------|-----------|---------|---------|
 | **Backend** | FastAPI | 0.109+ | REST API & async operations |
-| **Orchestration** | LangGraph | 0.2+ | RAG workflow & agent routing |
-| **Vector DB** | Qdrant | 1.7+ | Hybrid dense + sparse storage |
-| **PDF Parser** | LlamaParse | Latest | Structure-aware PDF extraction |
-| **Dense Encoder** | Qwen 0.6B | Latest | Semantic embeddings (768-dim) |
+| **Orchestration** | LangGraph | 0.2+ | RAG workflow management |
+| **Vector DB** | Qdrant | 1.7+ | Hybrid dense + sparse embeddings |
+| **PDF Parser** | LlamaParse (GPT-4 Mini) | Latest | Structure-aware PDF extraction with unit preservation |
+| **Dense Encoder** | Qwen3-Embedding-0.6B | Latest | Semantic embeddings (1024-dim) |
 | **Sparse Encoder** | SPLADE-PP-V2 | Latest | Lexical expansion & term weighting |
-| **Reranker** | BGE-M3 | Latest | Cross-encoder contextual ranking |
-| **LLM** | GPT-OSS20B + Gemini 2.0 flash | Latest | Context generation & answer synthesis |
+| **Reranker** | BGE-M3-V2 | Latest | Cross-encoder ranking |
+| **LLM** | Gemini 2.5 Flash, Groq (GPT-OSS 20B) | Latest | Context generation & responses |
 | **Containerization** | Docker + Compose | 24+ | Multi-service orchestration |
 
-### Model Details & Links
+---
 
-#### Embedding Models
-- **[Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)**
-  - 0.6B parameters, optimized for multilingual financial text
-  - Context window: 8192 tokens
-  - Output dimension: 1024
-  - Inference speed: ~50ms/sequence (GPU)
-  
-- **[prithivida/Splade_PP_en_v2](https://huggingface.co/prithivida/Splade_PP_en_v2)**
-  - SPLADE++ architecture for sparse retrieval
-  - Vocabulary size: 30,522 (BERT tokenizer)
-  - Effective on exact-match financial terminology
-  - Works well with Indonesian business terms
+## Limitations
 
-#### Reranking Models
-- **[BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)** ⭐ **Production Choice**
-  - Cross-encoder architecture (568M parameters)
-  - Multilingual support
-  - Inference: 45ms/pair (GPU)
-  
-- **[Cohere V3 English Reranker](https://docs.cohere.com/v2/docs/rerank)**
-  - Production-grade API service
-  - Optimized for low-latency inference (API)
+**High API Costs**
+- PDF parsing via LlamaParse with GPT-4 Mini incurs per-page charges
+- Context generation using LLM APIs (Groq, Gemini) adds significant overhead per chunk
+- Cost scales with document complexity and page count
 
-#### LLM Models
-- **GPT-OSS 20B + Gemini 2.0 Flash**: Context generation & answer synthesis
-
-#### Document Processing
-- **[LlamaParse](https://github.com/run-llama/llama_parse)**: 
-  - Advanced PDF parsing with table structure preservation
-  - Handles complex layouts, merged cells, nested tables
-  - API-based service (separate from main pipeline)
+**Unit Conversion Accuracy Trade-off**
+- We use **GPT-4 Mini** for LlamaParse PDF parsing to balance cost and accuracy
+- While more powerful models (Claude Sonnet 4.5, GPT-4) produce more reliable unit conversions, they significantly increase costs
+- GPT-4 Mini occasionally confuses numerical units (billion vs. trillion) in complex tables.
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-- Docker 24+ and Docker Compose v2
-- Python 3.10+ (for local development)
-- **API Keys Required:**
-  - Groq (for GPT-OSS 20B)
-  - Gemini (for Gemini 2.0 Flash)
-  - LlamaParse API key (for PDF parsing)
-  - Cohere API key (optional, for Cohere reranker)
 
-### Parse Document using CLI
+- Docker 24+ and Docker Compose v2
+- Python 3.11+ (for local development)
+- **Required API Keys:**
+  - Groq (for LLM context generation)
+  - Gemini API (alternative LLM)
+  - LlamaParse (for PDF parsing)
+  - Cohere (optional, for Cohere reranker)
+
+### Quick Start
+
+**1. Parse a Financial Document**
 ```bash
 python src/document_processor/cli.py \
-  --input data/ADRO.pdf \
-  --ticker ADRO \
-  --company "PT Adaro Energy" \
-  --output data/processed \              # Directory (default)
-  --output-filename ALL_DATA.json \      # Filename (default)
-  --start-page 45 \                       # Optional
-  --end-page 50 \                         # Optional
-  --mode append                           # append (default) or new
+  --input data/BBCA_annual_2024.pdf \
+  --ticker BBCA \
+  --company "Bank Central Asia" \
+  --output data/processed
 ```
 
-### Local Development Setup 
-
+**2. Set Up Local Development**
 ```bash
-# 1. Create virtual environment
+# Create environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 2. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 3. Set up environment variables
+# Configure environment
 cp .env.example .env
 
-# 5. Run the API server
+# Start API server
 make run
 ```
-### Service URLs
-- **API Docs (Swagger)**: http://localhost:7860/docs
-- **API Docs (ReDoc)**: http://localhost:7860/redoc
+
+**3. Access the API**
+- Swagger UI: `http://localhost:7860/docs`
+- ReDoc: `http://localhost:7860/redoc`
+
+---
+
+## How It Works
+
+### RAG Pipeline Overview
+
+<figure>
+  <img src="static/rag.png" alt="Workflow" style="width:100%;">
+  <figcaption>Figure: RAG Workflow</figcaption>
+</figure>
+
+
+The system follows this workflow:
+
+1. **Document Ingestion** → PDF uploaded and parsed by LlamaParse 
+2. **Context Generation** → Each chunk enriched with LLM-generated context
+3. **Embedding & Indexing** → Both dense and sparse embeddings stored in Qdrant
+4. **Query Processing** → User query embedded and searched against indices
+5. **Reranking** → BGE-M3 reranks results by relevance
+6. **Response Generation** → Top-k results passed to LLM for synthesis
+
+---
+
+## Evaluation Methodology
+
+We created a manually curated evaluation dataset with 25 financial questions in Indonesian:
+
+**Dataset Structure:**
+```json
+{
+  "id": "id",
+  "question": "Berapa total aset Bank BCA tahun 2023?",
+  "answer": "Rp 1,234.5 trillion",
+  "context": "Bank Central Asia...",
+}
+```
+
+Evaluation metrics include Hit Rate (Did relevant chunk appear in top-k?), MRR (Mean Reciprocal Rank), and NDCG (ranking quality).
+
+---
+
+## Development Phases
+
+### MVP (Current) 
+- **Embedding:** Unified Embedding API (flexible model switching)
+- **Reranker:** Cohere API (production-ready)
+- **Focus:** Rapid prototyping and validation
+- **Infrastructure:** CPU-based (cost-effective for POC)
+
+### Production (Planned) 
+- **Embedding:** Self-hosted on GPU (NVIDIA A10+)
+- **Models:** Qwen3-Embedding-0.6B, SPLADE-PP-V2, BGE-M3
+- **Benefits:** Lower latency, cost savings at scale, data privacy, custom fine-tuning
+- **Infrastructure:** GPU acceleration for sub-second latency
 
 ---
 
 ## Contributing
 
-We welcome contributions from the community! 
+We welcome community contributions!
 
-### Contribution Guidelines
+**How to contribute:**
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Make changes with clear commit messages
+4. Update documentation as needed
+5. Submit a Pull Request with test results
 
-1. **Fork the repository** and create a feature branch
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes** with clear commit messages
-   ```bash
-   git commit -m "feat: add financial ratio calculation module"
-   ```
-
-4. **Update documentation** if needed
-
-5. **Submit a Pull Request** with:
-   - Clear description of changes
-   - Test results and performance benchmarks
-   - Screenshots/demos if applicable
+**Contribution areas:** Bug fixes, documentation improvements, new embedding models, evaluation metrics, dataset expansions.
 
 ---
 
-## References & Inspiration
+## References
 
-This project builds upon cutting-edge research and industry best practices:
+**Research & Inspiration:**
+- [Anthropic's Contextual Retrieval approach (September 2024)](https://www.anthropic.com/engineering/contextual-retrieval) - Core methodology for context preservation
+- [LangChain Documentation](https://python.langchain.com/) - RAG patterns and best practices
+- [Qdrant Vector Database](https://qdrant.tech/documentation/) - Hybrid search implementation
+- [LlamaParse](https://github.com/run-llama/llama_parse) - Advanced PDF parsing
+- [FastAPI Best Practices](https://fastapi.tiangolo.com/) - Production API design
 
-### Research Papers
-**[Contextual Retrieval (Anthropic, 2024)](https://www.anthropic.com/news/contextual-retrieval)**
-- Core inspiration for context generation approach
-- Demonstrates 67% reduction in retrieval failures
+**Model Resources:**
+- [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) - Dense encoder
+- [SPLADE-PP-V2](https://huggingface.co/prithivida/Splade_PP_en_v2) - Sparse encoder
+- [BGE-M3](https://huggingface.co/BAAI/bge-reranker-v2-m3) - Cross-encoder reranker
 
-### Tools & Frameworks
-- **[LangChain Documentation](https://python.langchain.com/)** - RAG patterns and best practices
-- **[Qdrant Vector Database](https://qdrant.tech/documentation/)** - Hybrid search implementation
-- **[LlamaParse](https://github.com/run-llama/llama_parse)** - Advanced PDF parsing
-- **[FastAPI Best Practices](https://fastapi.tiangolo.com/)** - Production API design
 ---
 
-### Getting Help
+## Support & Contact
 
-- **Issues**: [GitHub Issues](https://github.com/fahmiaziz98/idx-analyst/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/fahmiaziz98/idx-analyst/discussions)
+**Need Help?**
+- 🐛 [GitHub Issues](https://github.com/fahmiaziz98/idx-analyst/issues) - Report bugs
+- 💬 [GitHub Discussions](https://github.com/fahmiaziz98/idx-analyst/discussions) - Ask questions
+
+**Connect with Us:**
+- **Maintainer:** Fahmi Aziz Fadhil
+- **Email:** fahmiazizfadhil09@gmail.com
+- **LinkedIn:** [Fahmi Aziz Fadhil](https://www.linkedin.com/in/fahmi-aziz-fadhil-979480235/)
+- **GitHub:** [@fahmiaziz98](https://github.com/fahmiaziz98)
+
 ---
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Contact & Support
-
-- **Project Maintainer**: Fahmi Aziz Fadhil 
-- **Email**: [fahmiazizfadhil09@gmail.com](fahmiazizfadhil09@gmail.com)  
-- **LinkedIn**: [Fahmi Aziz Fadhil](https://www.linkedin.com/in/fahmi-aziz-fadhil-979480235/)  
-- **GitHub**: [@fahmiaziz98](https://github.com/fahmiaziz98)
-
----
+MIT License - see [LICENSE](LICENSE) file for details.
