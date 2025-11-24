@@ -98,15 +98,28 @@ Using **LlamaParse** for advanced PDF parsing that:
 ## Performance Metrics
 <figure>
   <img src="static/hybrid_reranking.png" alt="Hybrid Reranking" style="width:100%;">
-  <figcaption>Figure 2: Performance of BGE </figcaption>
+  <figcaption>Figure 1: Performance of BGE </figcaption>
 </figure>
 
 <figure>
   <img src="static/hybrid_reranking_cohere.png" alt="Cohere Reranking" style="width:100%;">
-  <figcaption>Figure 3: Performance of Cohere</figcaption>
+  <figcaption>Figure 2: Performance of Cohere</figcaption>
 </figure>
 
-Our evaluation on 25 manually curated queries shows strong retrieval accuracy:
+---
+We created a evaluation dataset with 25 financial questions:
+
+**Dataset Structure:**
+```json
+{
+  "id": "id",
+  "question": "Berapa total aset Bank BCA tahun 2023?",
+  "answer": "Rp 1,234.5 trillion",
+  "context": "Bank Central Asia...",
+}
+```
+
+Evaluation metrics include Hit Rate (Did relevant chunk appear in top-k?), MRR (Mean Reciprocal Rank), and NDCG (ranking quality).
 
 | Metric | BGE Rerank | Cohere Rerank | Winner |
 |--------|-----------|---------------|---------|
@@ -228,10 +241,10 @@ make run
 
 <figure>
   <img src="static/rag.png" alt="Workflow" style="width:100%;">
-  <figcaption>Figure: RAG Workflow</figcaption>
+  <figcaption>Figure3: RAG Workflow</figcaption>
 </figure>
 
-
+---
 The system follows this workflow:
 
 1. **Document Ingestion** → PDF uploaded and parsed by LlamaParse 
@@ -240,24 +253,6 @@ The system follows this workflow:
 4. **Query Processing** → User query embedded and searched against indices
 5. **Reranking** → BGE-M3 reranks results by relevance
 6. **Response Generation** → Top-k results passed to LLM for synthesis
-
----
-
-## Evaluation Methodology
-
-We created a manually curated evaluation dataset with 25 financial questions in Indonesian:
-
-**Dataset Structure:**
-```json
-{
-  "id": "id",
-  "question": "Berapa total aset Bank BCA tahun 2023?",
-  "answer": "Rp 1,234.5 trillion",
-  "context": "Bank Central Asia...",
-}
-```
-
-Evaluation metrics include Hit Rate (Did relevant chunk appear in top-k?), MRR (Mean Reciprocal Rank), and NDCG (ranking quality).
 
 ---
 
