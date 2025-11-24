@@ -52,15 +52,6 @@ class Settings(BaseSettings):
     QDRANT_BASE_URL: str
     COLLECTION: str = "document"
 
-    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=5, ge=1, le=20)
-    CIRCUIT_BREAKER_SUCCESS_THRESHOLD: int = Field(default=2, ge=1, le=10)
-    CIRCUIT_BREAKER_TIMEOUT: int = Field(default=60, ge=10, le=600)
-
-    MAX_RESPONSE_SIZE: int = Field(default=50_000, ge=1_000, le=500_000)
-    MAX_BUFFER_ITEMS: int = Field(default=1_000, ge=100, le=10_000)
-    MEMORY_WARNING_THRESHOLD_MB: int = Field(default=500, ge=100, le=2000)
-    MEMORY_CRITICAL_THRESHOLD_MB: int = Field(default=1000, ge=200, le=4000)
-
     ENABLE_METRICS: bool = True
     ENABLE_HEALTH_CHECKS: bool = True
     LOG_LEVEL: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
@@ -130,7 +121,7 @@ class Settings(BaseSettings):
         # Try encrypted keys first
         if self.API_KEYS_ENCRYPTED and self.ENCRYPTION_KEY:
             try:
-                from src.core.security import api_key_manager
+                from .security import api_key_manager
 
                 return api_key_manager.decrypt_api_keys(self.API_KEYS_ENCRYPTED)
             except Exception as e:
@@ -162,24 +153,6 @@ class Settings(BaseSettings):
         """Check if running in development."""
         return self.ENVIRONMENT == "development"
 
-    # ==================== Methods ====================
-    def get_circuit_breaker_config(self) -> dict:
-        """Get circuit breaker configuration."""
-        return {
-            "failure_threshold": self.CIRCUIT_BREAKER_FAILURE_THRESHOLD,
-            "success_threshold": self.CIRCUIT_BREAKER_SUCCESS_THRESHOLD,
-            "timeout": self.CIRCUIT_BREAKER_TIMEOUT,
-        }
-
-    def get_memory_config(self) -> dict:
-        """Get memory management configuration."""
-        return {
-            "max_response_size": self.MAX_RESPONSE_SIZE,
-            "max_buffer_items": self.MAX_BUFFER_ITEMS,
-            "warning_threshold_mb": self.MEMORY_WARNING_THRESHOLD_MB,
-            "critical_threshold_mb": self.MEMORY_CRITICAL_THRESHOLD_MB,
-        }
-
     def log_configuration(self):
         """Log important configuration (without sensitive data)."""
         logger.info("=" * 60)
@@ -193,8 +166,6 @@ class Settings(BaseSettings):
         logger.info(f"Qdrant: {self.QDRANT_BASE_URL}")
         logger.info(f"Embedding API: {self.EMBEDDING_API_URL}")
         logger.info(f"Collection: {self.COLLECTION}")
-        logger.info(f"Max Response Size: {self.MAX_RESPONSE_SIZE:,} chars")
-        logger.info(f"Circuit Breaker: Enabled (threshold={self.CIRCUIT_BREAKER_FAILURE_THRESHOLD})")
         logger.info(f"Metrics: {'Enabled' if self.ENABLE_METRICS else 'Disabled'}")
         logger.info(f"API Keys: {len(self.api_keys_list)} configured")
         logger.info("=" * 60)
