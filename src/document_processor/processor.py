@@ -118,8 +118,8 @@ class DocumentProcessor:
             logger.info("Using Google gemini-2.5-flash...")
             return init_chat_model("gemini-2.5-flash", model_provider="google_genai")
         
-        logger.info("Using Google gemini-2.5-flash-lite...")
-        return init_chat_model("gemini-2.5-flash-lite", model_provider="google_genai")
+        logger.info("Using Google openai/gpt-oss-20b...")
+        return init_chat_model("openai/gpt-oss-20b", model_provider="groq")
 
     def _init_parser(self, instruction: str, parse_mode: str, model: str, api_key: str):
         """Initialize LlamaParse document parser."""

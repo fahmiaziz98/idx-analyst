@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW: int = Field(default=60, ge=1, le=3600)
 
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
-    MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.0-flash"
+    MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.5-flash-lite"
 
     DATA_PATH: str = "data/COMBINED_DATA.json"
     TOTAL_DOCUMENTS: int = 0
