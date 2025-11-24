@@ -19,9 +19,7 @@ class APIKeyMetadata(BaseModel):
     key_hash: str
     created_at: datetime
     last_used: datetime | None = None
-    usage_count: int = 0
     is_active: bool = True
-    rate_limit: int = 100  # requests per minute
 
 class SecureAPIKeyManager:
     """
@@ -132,7 +130,6 @@ class SecureAPIKeyManager:
             )
         metadata = self._key_metadata[key_hash]
         metadata.last_used = datetime.now()
-        metadata.usage_count += 1
     
     def get_key_metadata(self, api_key: str) -> Optional[APIKeyMetadata]:
         """
