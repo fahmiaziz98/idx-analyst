@@ -1,4 +1,4 @@
-from .processor import DocumentProcessor, OutputResponse, INSTRUCTION, SYSTEM_PROMPT
+from .processor import INSTRUCTION, SYSTEM_PROMPT, DocumentProcessor, OutputResponse
 
 __all__ = [
     'DocumentProcessor',

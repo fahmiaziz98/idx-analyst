@@ -11,20 +11,24 @@ from qdrant_client import AsyncQdrantClient, models
 from tqdm.asyncio import tqdm as async_tqdm
 
 from src.core import settings
-from src.rag.embedding_client import EmbeddingAPIClient, get_embedding_client
+from src.rag.embedding_client import get_embedding_client
+from src.core.exception import ServiceMaintenanceError
 
 
 class QdrantVectoreStore:
     """
-    Enhanced wrapper class for Qdrant client with complete document information preservation.
+    Enhanced wrapper class for Qdrant client with circuit breaker protection
 
-    This wrapper handles both local and remote Qdrant instances and maintains all document
-    metadata throughout the search and reranking pipeline.
+    Features:
+    - Complete document information preservation
+    - Circuit breaker error handling for all embedding operations
+    - User-friendly maintenance messages
+    - Hybrid search (dense + sparse)
+    - Reranking support (local + Cohere)
     """
 
     def __init__(
         self,
-        config=settings,
         path_client: str = "./local_db",
         is_local: bool = False,
     ):
@@ -37,14 +41,11 @@ class QdrantVectoreStore:
             is_local: Whether to use local Qdrant instance
         """
         self.config = settings
-        # self.api_client = EmbeddingAPIClient(
-        #     base_url=config.EMBEDDING_API_URL
-        # )
         self.api_client = get_embedding_client()
         self.co = cohere.Client(self.config.COHERE_API_KEY)
 
         self.DENSE_VECTOR_NAME = "dense"
-        self.SPARSE_VECTOR_NAME: str = "sparse"
+        self.SPARSE_VECTOR_NAME = "sparse"
 
         if is_local:
             try:
@@ -56,14 +57,19 @@ class QdrantVectoreStore:
                 )
                 self.client = None
         else:
-            self.client = AsyncQdrantClient(
-                url=self.config.QDRANT_BASE_URL,
-                api_key=self.config.QDRANT_API_KEY,
-                timeout=60,
-                check_compatibility=False,
-            )
-            logger.success("Successfully created remote Qdrant client")
-
+            try:
+                self.client = AsyncQdrantClient(
+                    url=self.config.QDRANT_BASE_URL,
+                    api_key=self.config.QDRANT_API_KEY,
+                    timeout=60,
+                    check_compatibility=False,
+                )
+                logger.success("Successfully created remote Qdrant client")
+            except Exception as e:
+                logger.error(f"Failed to create remote Qdrant client: {e}")
+                self.client = None
+                raise
+            
     async def create_collection(self, collection_name: str, dimension: int):
         """
         Create collection with hybrid vector configuration.
@@ -98,26 +104,26 @@ class QdrantVectoreStore:
                         )
                     },
                     hnsw_config=models.HnswConfigDiff(
-                        m=8,  # Lower m = less edges = faster (standard: 16)
-                        ef_construct=32,  # 100 Standard construction quality
-                        full_scan_threshold=10000,  # Use HNSW for most queries
-                        max_indexing_threads=0,  # Auto-select optimal threads
-                        on_disk=True,  # HNSW index on disk, save RAM
-                        payload_m=16  # Payload edges for filtered search
+                        m=8,
+                        ef_construct=32,
+                        full_scan_threshold=10000,
+                        max_indexing_threads=0,
+                        on_disk=True,
+                        payload_m=16
                     ),
                     optimizers_config=models.OptimizersConfigDiff(
                         deleted_threshold=0.2,
                         vacuum_min_vector_number=1000,
-                        default_segment_number=2,  # CRITICAL: Low segments = faster search
-                        max_segment_size=None,  # No limit
-                        indexing_threshold=50000,  # Large threshold = less frequent indexing
-                        flush_interval_sec=10,  # Longer flush interval
-                        max_optimization_threads=0  # Auto
+                        default_segment_number=2,
+                        max_segment_size=None,
+                        indexing_threshold=50000,
+                        flush_interval_sec=10,
+                        max_optimization_threads=0
                     )
                 )
-                logger.success(f"Successfully created collection `{self.config.COLLECTION}`")
+                logger.success(f"Successfully created collection `{collection_name}`")
             else:
-                logger.info(f"Collection `{self.config.COLLECTION}` already exists.")
+                logger.info(f"Collection `{collection_name}` already exists.")
         except Exception as e:
             logger.error(f"Error creating collection: {e}")
 
@@ -133,7 +139,7 @@ class QdrantVectoreStore:
         disable_indexing: bool = True
     ) -> dict[str, int]:
         """
-        Upload documents to collection with optimal batch processing
+        Upload documents to collection with circuit breaker protection
 
         Args:
             collection_name: Target collection name
@@ -148,6 +154,9 @@ class QdrantVectoreStore:
 
         Returns:
             {"successful": count, "failed": count}
+            
+        Raises:
+            ServiceMaintenanceError: When embedding service is in maintenance mode
         """
         if not self.client:
             logger.error("Qdrant client not available")
@@ -182,6 +191,7 @@ class QdrantVectoreStore:
                     text = doc.get(text_field, "")
                     texts.append(text)
 
+                texts_dense = texts
                 if dense_instruction:
                     texts_dense = [f"{dense_instruction}: {text}" for text in texts]
 
@@ -206,7 +216,7 @@ class QdrantVectoreStore:
                                 id=doc.get("id"),
                                 vector={
                                     self.DENSE_VECTOR_NAME: dense_embedding,
-                                    self.SPARSE_VECTOR_NAME: sparse_vector  # jika error ganti ini sparse_dict
+                                    self.SPARSE_VECTOR_NAME: sparse_vector
                                 },
                                 payload={
                                     "id": doc.get("id"),
@@ -233,6 +243,7 @@ class QdrantVectoreStore:
                             wait=False
                         )
                         successful_count += len(points)
+
                 except Exception as e:
                     logger.error(f"Failed to process batch: {e}")
                     failed_count += len(batch)
@@ -254,6 +265,9 @@ class QdrantVectoreStore:
 
             return {"successful": successful_count, "failed": failed_count}
 
+        except ServiceMaintenanceError:
+            raise
+
         except Exception as e:
             logger.error(f"Upload failed: {e}")
             return {"successful": successful_count, "failed": failed_count}
@@ -273,7 +287,7 @@ class QdrantVectoreStore:
         cohere_model: str = "rerank-english-v3.0"
     ) -> list[dict[str, Any]]:
         """
-        Hybrid search dengan optimal performance
+        Hybrid search with circuit breaker protection
 
         Args:
             query: Search query
@@ -290,6 +304,9 @@ class QdrantVectoreStore:
 
         Returns:
             List of documents with scores
+            
+        Raises:
+            ServiceMaintenanceError: When embedding service is in maintenance mode
         """
         if not self.client:
             logger.error("Qdrant client not available")
@@ -302,6 +319,7 @@ class QdrantVectoreStore:
 
             start_embed = time.perf_counter()
 
+            query_dense = query
             if dense_instruction:
                 query_dense = f"{dense_instruction}: {query}"
 
@@ -414,6 +432,9 @@ class QdrantVectoreStore:
                             reranked_docs.append(original_doc)
 
                         documents = reranked_docs
+                    
+                    except ServiceMaintenanceError:
+                        raise
 
                     except Exception as e:
                         logger.error(f"Local reranking failed: {e}")
@@ -425,6 +446,9 @@ class QdrantVectoreStore:
             logger.success(f"✅ Total time: {total_duration:.2f}s")
 
             return documents
+
+        except ServiceMaintenanceError:
+            raise 
 
         except Exception as e:
             logger.error(f"Search failed: {e}")
@@ -500,7 +524,7 @@ class QdrantVectoreStore:
 
         # Format 2: Nested list [[{"index": 123, "value": 0.5}, ...]]
         elif isinstance(response, list) and response and isinstance(response[0], list):
-            if response[0]: # Ensure the inner list is not empty
+            if response[0]:  # Ensure the inner list is not empty
                 for item in response[0]:
                     if isinstance(item, dict):
                         idx = item.get('index')
@@ -607,6 +631,12 @@ _retriever_instance: QdrantVectoreStore | None = None
 
 
 def get_retriever_instance() -> QdrantVectoreStore:
+    """
+    Get singleton instance of QdrantVectoreStore
+    
+    Returns:
+        QdrantVectoreStore instance
+    """
     global _retriever_instance
     if _retriever_instance is None:
         _retriever_instance = QdrantVectoreStore()

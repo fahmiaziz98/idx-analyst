@@ -7,6 +7,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from src.api.dependencies import get_current_api_key
 from src.models.schemas import ChatRequest, ChatResponse, StreamChunk
+from src.core.exception import ServiceMaintenanceError
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ router = APIRouter()
 )
 async def chat(request: ChatRequest):
     """
-    Non-streaming chat endpoint
+    Non-streaming chat endpoint with circuit breaker support
 
     - **message**: User message/query
     - **conversation_id**: Optional conversation ID for context
@@ -39,11 +40,24 @@ async def chat(request: ChatRequest):
             metadata=request.metadata,
         )
 
+    except ServiceMaintenanceError as e:
+        logger.warning(f"⛔ Service Maintenance Triggered: {e.message}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "service_maintenance",
+                "message": e.message,             
+                "service": e.service_name,        
+                "retry_after": e.remaining_seconds, 
+                "available_at": e.reset_time.isoformat(),
+            },
+        ) from e
+
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process chat request: {str(e)}",
+            detail=f"Internal Server Error: {str(e)}",
         ) from e
 
 
@@ -54,7 +68,7 @@ async def chat(request: ChatRequest):
 )
 async def chat_stream(request: ChatRequest):
     """
-    Server-Sent Events (SSE) streaming chat endpoint
+    Server-Sent Events (SSE) streaming chat endpoint with circuit breaker support
 
     - **message**: User message/query
     - **conversation_id**: Optional conversation ID for context
@@ -87,6 +101,18 @@ async def chat_stream(request: ChatRequest):
             yield {"event": "done", "data": final_chunk.model_dump_json()}
 
             logger.info("Stream completed successfully")
+
+        except ServiceMaintenanceError as e:
+            # Circuit breaker is open - send maintenance error
+            logger.warning(f"Service maintenance during stream: {e.message}")
+            error_data = {
+                "error": "service_maintenance",
+                "message": e.message,
+                "service": e.service_name,
+                "retry_after": e.remaining_seconds,
+                "available_at": e.reset_time.isoformat(),
+            }
+            yield {"event": "error", "data": json.dumps(error_data)}
 
         except Exception as e:
             logger.error(f"Stream error: {str(e)}")
