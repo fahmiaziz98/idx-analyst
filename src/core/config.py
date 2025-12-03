@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     WORKERS: int = Field(default=4, ge=1, le=32)
     ALLOWED_ORIGINS: str = "*"
 
+    DATABASE_URL: Optional[str] = None
+
     RATE_LIMIT_REQUESTS: int = Field(default=100, ge=1, le=10000)
     RATE_LIMIT_WINDOW: int = Field(default=60, ge=1, le=3600)
 
