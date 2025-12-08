@@ -31,6 +31,7 @@ dependencies = [
     "qdrant-client==1.15.1",
     "redis>=7.1.0",
     "seaborn>=0.13.2",
+    "slowapi>=0.1.9",
     "sqlalchemy[asyncio]>=2.0.43",
     "sse-starlette==1.6.5",
     "tavily-python==0.7.12",

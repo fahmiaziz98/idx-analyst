@@ -1,14 +1,12 @@
 import hashlib
 import hmac
-import secrets
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel
 
 from cryptography.fernet import Fernet
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 from loguru import logger
+from pydantic import BaseModel
 
 from src.core.config import settings
 
@@ -21,16 +19,18 @@ class APIKeyMetadata(BaseModel):
     last_used: datetime | None = None
     is_active: bool = True
 
+
 class SecureAPIKeyManager:
     """
     Manages encrypted API keys with rotation support.
-    
+
     Features:
     - Encrypt/decrypt API keys at runtime
     - Track key usage
     - Support key rotation
     - Rate limiting per key
     """
+
     def __init__(self):
         self.encryption_key = self._get_or_create_encryption_key()
         self.cipher_suite = Fernet(self.encryption_key)
@@ -45,11 +45,10 @@ class SecureAPIKeyManager:
         """
         if hasattr(settings, "ENCRYPTION_KEY") and settings.ENCRYPTION_KEY:
             return settings.ENCRYPTION_KEY.encode()
-        
+
         key = Fernet.generate_key()
         logger.warning(
-            "⚠️  Generated new encryption key. "
-            "Save this to ENCRYPTION_KEY environment variable!"
+            "⚠️  Generated new encryption key. Save this to ENCRYPTION_KEY environment variable!"
         )
         return key
 
@@ -66,7 +65,7 @@ class SecureAPIKeyManager:
         key_string = "".join(api_key)
         encrypted_key = self.cipher_suite.encrypt(key_string.encode())
         return encrypted_key.decode()
-    
+
     def decrypt_api_keys(self, encrypted_key: str) -> list[str]:
         """
         Decrypt an API key.
@@ -84,7 +83,7 @@ class SecureAPIKeyManager:
         except Exception as e:
             logger.error(f"Failed to decrypt API key: {e}")
             raise ValueError("Invalid API key") from e
-        
+
     def hash_api_key(self, api_key: str) -> str:
         """
         Hash an API key.
@@ -114,7 +113,7 @@ class SecureAPIKeyManager:
             if hmac.compare_digest(provided_hash, valid_hash):
                 self._update_key_metadata(provided_hash)
                 return True
-            
+
         return False
 
     def _update_key_metadata(self, key_hash: str) -> None:
@@ -130,8 +129,8 @@ class SecureAPIKeyManager:
             )
         metadata = self._key_metadata[key_hash]
         metadata.last_used = datetime.now()
-    
-    def get_key_metadata(self, api_key: str) -> Optional[APIKeyMetadata]:
+
+    def get_key_metadata(self, api_key: str) -> APIKeyMetadata | None:
         """
         Get key metadata.
 
@@ -143,7 +142,7 @@ class SecureAPIKeyManager:
         """
         key_hash = self.hash_api_key(api_key)
         return self._key_metadata.get(key_hash)
-    
+
     # def is_rate_limited(self, api_key: str, window_seconds: int = 60) -> bool:
     #     """
     #     Check if an API key is rate limited.
@@ -158,7 +157,7 @@ class SecureAPIKeyManager:
     #     metadata = self.get_key_metadata(api_key)
     #     if not metadata or not metadata.last_used:
     #         return False
-        
+
     #     time_since_last_use = (datetime.now() - metadata.last_used).total_seconds()
     #     if time_since_last_use > window_seconds:
     #         return False
@@ -170,9 +169,11 @@ class SecureAPIKeyManager:
 
     #     return requests_per_second > max_requests_per_second
 
+
 # Global instance
 api_key_manager = SecureAPIKeyManager()
 api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
+
 
 async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
     """
@@ -203,7 +204,7 @@ async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication service unavailable",
         ) from e
-    
+
     if not api_key_manager.verify_api_key(api_key, valid_keys):
         logger.warning(f"Invalid API key: {api_key[:6]}")
         raise HTTPException(
@@ -211,7 +212,7 @@ async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
             detail="Invalid API key, Access forbidden",
             headers={"WWW-Authenticate": "ApiKey"},
         )
-    
+
     # # check rate limit
     # if api_key_manager.is_rate_limited(api_key):
     #     logger.warning(f"Rate limited API key: {api_key[:6]}")
@@ -220,5 +221,5 @@ async def validate_api_key(api_key: str = Security(api_key_header)) -> str:
     #         detail="Rate limit exceeded",
     #         headers={"WWW-Authenticate": "ApiKey"},
     #     )
-    
+
     return api_key

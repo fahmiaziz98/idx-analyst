@@ -42,7 +42,7 @@ async def create_tables():
     """
     Initialize the database by creating all tables.
     """
-    from src.database.base import Base  
+    from src.database.base import Base
 
     async with engine.begin() as conn:
         # Create all tables
@@ -53,7 +53,7 @@ async def drop_tables():
     """
     Drop all tables in the database.
     """
-    from src.database.base import Base  
+    from src.database.base import Base
 
     async with engine.begin() as conn:
         # Drop all tables

@@ -1,5 +1,4 @@
 from functools import lru_cache
-from typing import Optional
 
 from loguru import logger
 from pydantic import Field, field_validator, model_validator
@@ -16,19 +15,16 @@ class Settings(BaseSettings):
     API_DESCRIPTION: str = "MVP RAG system for Indonesian financial reports"
     ENVIRONMENT: str = Field(default="development", pattern="^(development|staging|production)$")
 
-    API_KEYS_ENCRYPTED: Optional[str] = None
-    ENCRYPTION_KEY: Optional[str] = None
-    API_KEYS: Optional[str] = None
+    API_KEYS_ENCRYPTED: str | None = None
+    ENCRYPTION_KEY: str | None = None
+    API_KEYS: str | None = None
 
     HOST: str = "0.0.0.0"
     PORT: int = Field(default=7860, ge=1024, le=65535)
     WORKERS: int = Field(default=4, ge=1, le=32)
     ALLOWED_ORIGINS: str = "*"
 
-    DATABASE_URL: Optional[str] = None
-
-    RATE_LIMIT_REQUESTS: int = Field(default=100, ge=1, le=10000)
-    RATE_LIMIT_WINDOW: int = Field(default=60, ge=1, le=3600)
+    DATABASE_URL: str | None = None
 
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.5-flash-lite"
@@ -36,21 +32,20 @@ class Settings(BaseSettings):
     DATA_PATH: str = "data/COMBINED_DATA.json"
     TOTAL_DOCUMENTS: int = 0
 
-    COHERE_API_KEY: Optional[str] = None
-    TAVILY_API_KEY: Optional[str] = None
-    LLAMA_PARSE_KEY: Optional[str] = None
+    COHERE_API_KEY: str | None = None
+    TAVILY_API_KEY: str | None = None
+    LLAMA_PARSE_KEY: str | None = None
 
-    EMBEDDING_API_URL: str 
+    EMBEDDING_API_URL: str
     INSTRUCTION_DOC: str = (
-        "This is a passage from the annual financial report "
-        "of an Indonesian public company"
+        "This is a passage from the annual financial report of an Indonesian public company"
     )
     INSTRUCTION_QUERY: str = (
         "Given a financial analysis or QA query, retrieve relevant passages "
         "from annual reports of Indonesian public companies"
     )
 
-    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_API_KEY: str | None = None
     QDRANT_BASE_URL: str
     COLLECTION: str = "document"
 
@@ -164,7 +159,6 @@ class Settings(BaseSettings):
         logger.info(f"API Version: {self.API_VERSION}")
         logger.info(f"Host: {self.HOST}:{self.PORT}")
         logger.info(f"Workers: {self.WORKERS}")
-        logger.info(f"Rate Limit: {self.RATE_LIMIT_REQUESTS} req/{self.RATE_LIMIT_WINDOW}s")
         logger.info(f"Qdrant: {self.QDRANT_BASE_URL}")
         logger.info(f"Embedding API: {self.EMBEDDING_API_URL}")
         logger.info(f"Collection: {self.COLLECTION}")

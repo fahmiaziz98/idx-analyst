@@ -1,13 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.api.initialize import initialize_vector_store
 from src.api.logger import setup_logger
-from src.api.middleware import setup_middlewares
-from src.api.v1 import routers, websocket
+from src.api.middleware import limiter, setup_middleware
+from src.api.v1.api import api_router
 from src.core import settings
 from src.models.schemas import ErrorResponse, HealthResponse
 
@@ -17,95 +17,72 @@ logger = setup_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Run on application startup and shutdown
-    """
-    logger.info("=" * 50)
-    logger.info(f"Starting {settings.API_TITLE} v{settings.API_VERSION}")
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
-    logger.info(f"Docs available at: http://{settings.HOST}:{settings.PORT}/docs")
-    logger.info("=" * 50)
+    Application lifespan context manager.
 
+    Performs startup and shutdown tasks for the FastAPI app.
+
+    Args:
+    app (FastAPI): The FastAPI application instance.
+
+    Yields
+        None: The context manager yields control to the application.
+    """
+    # Startup
+    logger.info(f"Starting {settings.API_TITLE}...")
     init_success = await initialize_vector_store()
     if not init_success:
-        logger.error("Vector store initialization failed. Shutting down application.")
-        import sys
+        logger.critical("Vector DB Init Failed!")
 
-        sys.exit(1)
     yield
-    logger.info("Shutting down application...")
+
+    logger.info("Shutting down...")
 
 
 app = FastAPI(
     title=settings.API_TITLE,
-    description=settings.API_DESCRIPTION,
     version=settings.API_VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
     lifespan=lifespan,
+    docs_url="/docs" if settings.ENVIRONMENT != "production" else None,  # Hide docs in prod
 )
 
+setup_middleware(app)
 
-# Exception handlers
+
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_handler(request, exc):
     """
-    Handle validation errors
+    Handle FastAPI request validation errors.
+
+    Returns a JSON response with status code 422 and error details.
     """
-    logger.warning(f"Validation error: {exc.errors()}")
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"error": "Validation Error", "detail": exc.errors(), "body": exc.body},
+        status_code=422, content={"error": "Validation Error", "detail": exc.errors()}
     )
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_handler(request, exc):
     """
-    Global exception handler
+    Global exception handler for uncaught errors.
+
+    Logs the exception and returns a 500 JSON response.
     """
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    logger.error(f"Global Error: {exc}", exc_info=True)
     return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(
-            error="Internal Server Error",
-            detail=str(exc)
-            if settings.ENVIRONMENT == "development"
-            else "An unexpected error occurred",
-        ).model_dump(),
+        status_code=500,
+        content=ErrorResponse(error="Internal Server Error", detail=str(exc)).model_dump(),
     )
 
 
-setup_middlewares(app)
-
-
-@app.get("/", tags=["Root"])
-async def root():
+@app.get("/health", tags=["Health"])
+@limiter.limit("3/minutes")
+async def health(request: Request):
     """
-    Root endpoint
-    """
-    return {
-        "message": "Welcome to RAG Chatbot API",
-        "version": settings.API_VERSION,
-        "description": settings.API_DESCRIPTION,
-        "docs": "/docs",
-        "health": "/api/v1/health",
-        "endpoints": {
-            "chat": "/api/v1/chat",
-            "stream": "/api/v1/chat/stream",
-            "websocket": "/api/v1/ws/chat",
-        },
-    }
+    Health‑check endpoint.
 
-
-@app.get("/health", response_model=HealthResponse, tags=["Health"], summary="Health check endpoint")
-async def health_check():
+    Returns a simple JSON payload indicating the service status and version.
     """
-    Check API health status
-    """
-    logger.info("Health check requested")
     return HealthResponse(status="healthy", version=settings.API_VERSION)
 
 
-app.include_router(routers.router, prefix="/api/v1", tags=["Chat-Agent"])
-app.include_router(websocket.router, prefix="/api/v1/ws", tags=["WebSocket"])
+app.include_router(api_router, prefix="/api/v1")
