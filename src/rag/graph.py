@@ -14,7 +14,7 @@ from .prompts import (
     RESPONSE_SYSTEM_PROMPT,
     ROUTER_SYSTEM_PROMPT,
 )
-from .researcher_graph import graph as research_graph
+from src.rag.researcher_graph import graph as research_graph
 from .state import AgentState, InputState, Router
 from .utils import format_docs
 

@@ -9,7 +9,6 @@ from tavily import AsyncTavilyClient
 from src.core import settings
 from src.rag import prompts
 from src.rag.utils import _generate_uuid
-from src.vector_db.vectorstore import get_retriever_instance
 
 from .state import QueryState, ResearcherState
 
@@ -51,6 +50,8 @@ async def retrieve_documents(state: QueryState) -> list[dict[str, Any]]:
     Returns:
         dict[str, list[Document]]: A dictionary with a 'documents' key containing the list of retrieved documents.
     """
+    from src.vector_db.vectorstore import get_retriever_instance
+    
     logger.info(f"queries: {state.query}")
     retriever = get_retriever_instance()
     response = await retriever.search(

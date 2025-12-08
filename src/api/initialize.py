@@ -1,7 +1,7 @@
 from loguru import logger
 
 from src.core import settings
-from src.rag.vector_db.vectorstore import get_retriever_instance
+from src.vector_db.vectorstore import get_retriever_instance
 from src.utils import filter_non_header_documents, load_data
 
 
