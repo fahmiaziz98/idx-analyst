@@ -70,6 +70,12 @@ class Settings(BaseSettings):
         extra="allow",
     )
 
+    @property
+    def jwt_expiration_seconds(self) -> int:
+        """JWT expiration dalam seconds."""
+        return self.JWT_EXPIRATION_DAYS * 24 * 60 * 60
+    
+
 @lru_cache
 def get_settings() -> Settings:
     """

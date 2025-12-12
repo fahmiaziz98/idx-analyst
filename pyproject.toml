@@ -54,7 +54,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]  # Error, Formatting, Imports, Bugbear, Upgrade checks
-ignore = ["E501"]  # contoh: abaikan panjang baris kalau perlu
+ignore = ["E501", "B008"]  # contoh: abaikan panjang baris kalau perlu
 
 [tool.ruff.format]
 quote-style = "double"
