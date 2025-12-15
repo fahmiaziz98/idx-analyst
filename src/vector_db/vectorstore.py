@@ -335,7 +335,7 @@ class QdrantVectoreStore:
             start_query = time.perf_counter()
 
             # Parse embeddings
-            dense_embedding = self._parse_dense_embedding(dense_resp[0])
+            dense_embedding = self._parse_dense_embedding(dense_resp)
             sparse_dict = self._parse_sparse_embedding(sparse_resp[0])
             sparse_vector = self._format_sparse_for_qdrant(sparse_dict)
 

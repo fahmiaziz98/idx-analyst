@@ -18,7 +18,7 @@ class EmbeddingAPIClient:
     def __init__(
         self,
         base_url: str = settings.EMBEDDING_API_URL,
-        timeout: int = 30,
+        timeout: int = 300,
     ):
         self.base_url = base_url
         self.timeout = timeout
