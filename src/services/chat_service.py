@@ -4,7 +4,7 @@ from typing import Any
 from loguru import logger
 
 from src.core.exception import ServiceMaintenanceError
-from src.rag import agent_rag
+from src.rag import agent_rag 
 
 
 class ChatService:
@@ -13,14 +13,19 @@ class ChatService:
 
     This class encapsulates all business operations related to chat,
     providing a clean separation from API/HTTP concerns.
-
-    Attributes:
-        None (all methods are static/class methods)
     """
 
-    @classmethod
+    def __init__(self, agent=None):
+        """
+        Initialize ChatService.
+        
+        Args:
+            agent: The RAG agent to use. Defaults to the global agent_rag.
+        """
+        self.agent = agent or agent_rag
+
     async def process_chat(
-        cls,
+        self,
         messages: list[dict[str, Any]],
         conversation_id: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -29,31 +34,16 @@ class ChatService:
         Process a non-streaming chat request.
 
         Args:
-            messages: List of message dictionaries containing chat history
-            conversation_id: Optional unique identifier for conversation tracking
-            metadata: Optional additional metadata for the request
+            messages: List of messages to process.
+            conversation_id: Optional conversation ID.
+            metadata: Optional metadata.
 
         Returns:
-            Dictionary containing:
-                - response: The generated response content
-                - conversation_id: The provided or generated conversation ID
-                - metadata: Any associated metadata
-
-        Raises:
-            ServiceMaintenanceError: If the service is currently in maintenance mode
-            Exception: For any other errors during processing (to be handled upstream)
-
-        Example:
-            >>> result = await ChatService.process_chat(
-            ...     messages=[{"role": "user", "content": "Hello"}],
-            ...     conversation_id="conv_123",
-            ...     metadata={"source": "web"}
-            ... )
-            >>> print(result["response"])
+            Dictionary containing response, conversation ID, and metadata.
         """
         try:
             # Invoke RAG agent with messages
-            result = await agent_rag.ainvoke({"messages": messages})
+            result = await self.agent.ainvoke({"messages": messages})
             response_content = result["messages"][-1].content
 
             logger.info(
@@ -83,38 +73,18 @@ class ChatService:
             )
             raise
 
-    @classmethod
     async def process_stream_chat(
-        cls, messages: list[dict[str, Any]], conversation_id: str | None = None
+        self, messages: list[dict[str, Any]], conversation_id: str | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Process a streaming chat request.
 
-        This method yields chunks of the response as they are generated,
-        suitable for Server-Sent Events (SSE) or WebSocket streaming.
-
         Args:
-            messages: List of message dictionaries containing chat history
-            conversation_id: Optional unique identifier for conversation tracking
+            messages: List of messages to process.
+            conversation_id: Optional conversation ID.
 
-        Yields:
-            Dictionary with structure:
-                - type: One of "message", "done", "error"
-                - content: Response content (for "message" type)
-                - data: Error details (for "error" type)
-                - conversation_id: Associated conversation ID
-
-        Raises:
-            ServiceMaintenanceError: If the service is currently in maintenance mode
-            Exception: For any other errors during processing
-
-        Example:
-            >>> async for chunk in ChatService.process_stream_chat(
-            ...     messages=[{"role": "user", "content": "Hello"}],
-            ...     conversation_id="conv_123"
-            ... ):
-            ...     if chunk["type"] == "message":
-            ...         print(chunk["content"])
+        Returns:
+            Async generator yielding chat messages.
         """
         try:
             logger.info(
@@ -122,7 +92,7 @@ class ChatService:
                 f"Message count: {len(messages)}"
             )
 
-            async for msg, _ in agent_rag.astream({"messages": messages}, stream_mode="messages"):
+            async for msg, _ in self.agent.astream({"messages": messages}, stream_mode="messages"):
                 if msg.content:
                     yield {
                         "type": "message",

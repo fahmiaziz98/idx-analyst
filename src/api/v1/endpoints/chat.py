@@ -43,7 +43,8 @@ async def chat(
         HTTPException: 500 for any other server errors
     """
     try:
-        result = await ChatService.process_chat(
+        chat_service = ChatService()
+        result = await chat_service.process_chat(
             messages=body.messages, conversation_id=body.conversation_id, metadata=body.metadata
         )
 
@@ -101,7 +102,8 @@ async def chat_stream(
 
         Converts service layer chunks to SSE-compliant events.
         """
-        async for chunk in ChatService.process_stream_chat(
+        chat_service = ChatService()
+        async for chunk in chat_service.process_stream_chat(
             messages=body.messages, conversation_id=body.conversation_id
         ):
             if chunk["type"] == "message":

@@ -4,7 +4,9 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from src.auth.jwt import verify_token
-from src.rag import agent_rag
+
+# from src.rag import agent_rag  <-- Removed
+from src.services.chat_service import ChatService
 from src.services.websocket_manager import get_connection_manager
 
 router = APIRouter()
@@ -20,6 +22,10 @@ async def websocket_endpoint(
     WebSocket endpoint for real-time chat interaction
     with the RAG Chatbot.
     Client must provide a valid JWT token as a query parameter.
+
+    Args:
+        websocket: WebSocket connection object.
+        token: JWT token for authentication.
     """
     if not token:
         await websocket.close(code=1008, reason="Missing token")
@@ -46,31 +52,38 @@ async def websocket_endpoint(
             if not user_message:
                 continue
 
+            chat_service = ChatService()
             full_response = ""
-            async for msg, _ in agent_rag.astream(
-                {"messages": user_message}, stream_mode="messages"
+            
+            async for chunk in chat_service.process_stream_chat(
+                messages=user_message, conversation_id=conversation_id
             ):
-                if msg.content:
-                    full_response += msg.content
+                if chunk["type"] == "message":
+                    full_response += chunk["content"]
                     await manager.send_json(
                         {
                             "type": "message",
-                            "content": msg.content,
+                            "content": chunk["content"],
                             "conversation_id": conversation_id,
                             "metadata": {"streaming": True},
                         },
                         client_id,
                     )
-
-            await manager.send_json(
-                {
-                    "type": "info",
-                    "content": "[DONE]",
-                    "conversation_id": conversation_id,
-                    "metadata": {"streaming": False, "total_length": len(full_response)},
-                },
-                client_id,
-            )
+                elif chunk["type"] == "done":
+                     await manager.send_json(
+                        {
+                            "type": "info",
+                            "content": "[DONE]",
+                            "conversation_id": conversation_id,
+                            "metadata": {"streaming": False, "total_length": len(full_response)},
+                        },
+                        client_id,
+                    )
+                elif chunk["type"] == "error":
+                    await manager.send_json(
+                        {"type": "error", "content": json.dumps(chunk.get("data", "Error"))}, 
+                        client_id
+                    )
 
     except WebSocketDisconnect:
         manager.disconnect(client_id)
