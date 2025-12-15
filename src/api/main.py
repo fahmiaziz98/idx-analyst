@@ -9,7 +9,7 @@ from src.api.logger import setup_logger
 from src.api.middleware import limiter, setup_middleware
 from src.api.v1.api import api_router
 from src.core import settings
-from src.schemas.common import ErrorResponse
+from src.schemas.common import ErrorResponse, HealthResponse
 
 logger = setup_logger()
 
@@ -49,58 +49,52 @@ setup_middleware(app)
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_handler(request, exc):
+async def validation_handler(request: Request, exc: RequestValidationError):
     """
     Handle FastAPI request validation errors.
 
     Returns a JSON response with status code 422 and error details.
     """
+    error_details = exc.errors()
     return JSONResponse(
-        status_code=422, content={"error": "Validation Error", "detail": exc.errors()}
+        status_code=422,
+        content={
+            "error": "Validation Error",
+            "detail": str(error_details),
+            "validation_errors": error_details,
+        },
     )
 
 
 @app.exception_handler(Exception)
-async def global_handler(request, exc):
+async def global_handler(request: Request, exc: Exception):
     """
     Global exception handler for uncaught errors.
 
     Logs the exception and returns a 500 JSON response.
     """
     logger.error(f"Global Error: {exc}", exc_info=True)
+
+    error_detail = str(exc) if settings.ENVIRONMENT != "production" else "Internal Server Error"
+
     return JSONResponse(
         status_code=500,
-        content=ErrorResponse(error="Internal Server Error", detail=str(exc)).model_dump(
-            mode="json"
-        ),
+        content=ErrorResponse(
+            error="Internal Server Error",
+            detail=error_detail,
+        ).model_dump(mode="json"),
     )
 
 
-@app.get("/health", tags=["Health"])
-@limiter.limit("3/minutes")
-async def health(request: Request):
-    """
-    Health‑check endpoint.
-
-    Returns a simple JSON payload indicating the service status and version.
-    """
-    return {
-        "status": "healthy",
-        "api": "ok",
-        "redis": "ok",  # Mocked for now
-        "environment": settings.ENVIRONMENT,
-        "version": settings.API_VERSION,
-    }
-
-
 @app.get("/")
-async def root():
+@limiter.limit("3/minutes")
+async def root(request: Request):
     """Root endpoint."""
-    return {
-        "name": settings.API_TITLE,
-        "version": settings.API_VERSION,
-        "docs": "/docs",
-    }
+    return HealthResponse(
+        name=settings.API_TITLE,
+        version=settings.API_VERSION,
+        docs="/docs",
+    )
 
 
 app.include_router(api_router, prefix="/api/v1")

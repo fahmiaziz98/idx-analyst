@@ -128,39 +128,3 @@ async def logout(user: User = Depends(get_current_user)):
         }
     """
     return {"message": "Logged out successfully", "email": user.email}
-
-
-# ===== Health Check =====
-@router.get("/health")
-async def auth_health():
-    """
-    Health check for authentication system.
-
-    Check:
-    - OAuth credentials configured
-    - JWT secret configured
-
-    Returns:
-        Health status
-
-    Example:
-        GET /auth/health
-
-        Response:
-        {
-            "status": "healthy",
-            "oauth_configured": true,
-            "jwt_configured": true
-        }
-    """
-    oauth_configured = bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
-    jwt_configured = bool(settings.JWT_SECRET and len(settings.JWT_SECRET) >= 32)
-
-    is_healthy = oauth_configured and jwt_configured
-
-    return {
-        "status": "healthy" if is_healthy else "unhealthy",
-        "oauth_configured": oauth_configured,
-        "jwt_configured": jwt_configured,
-        "admin_email_set": bool(settings.ADMIN_EMAIL),
-    }

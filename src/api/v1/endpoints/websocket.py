@@ -5,7 +5,6 @@ from loguru import logger
 
 from src.auth.jwt import verify_token
 
-# from src.rag import agent_rag  <-- Removed
 from src.services.chat_service import ChatService
 from src.services.websocket_manager import get_connection_manager
 
