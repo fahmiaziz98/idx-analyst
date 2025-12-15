@@ -15,7 +15,7 @@ def valid_token():
 def test_chat_endpoint_no_token():
     """Test chat endpoint without token (should fail)"""
     response = client.post(
-        "/api/v1/chat/", json={"messages": [{"role": "user", "content": "Hello"}]}
+        "/api/v1/chat/", json={"messages": "Hello"}
     )
     # FastAPI HTTPBearer returns 403 for missing credentials by default
     assert response.status_code in [401, 403]
@@ -28,7 +28,7 @@ def test_chat_endpoint_valid_token(valid_token):
         response = client.post(
             "/api/v1/chat/",
             headers={"Authorization": f"Bearer {valid_token}"},
-            json={"messages": [{"role": "user", "content": "Hello"}]},
+            json={"messages": "Hello"},
         )
         assert response.status_code not in [401, 403]
     except Exception:
@@ -39,7 +39,7 @@ def test_chat_endpoint_valid_token(valid_token):
 def test_chat_stream_endpoint_no_token():
     """Test chat stream without token (should fail)"""
     response = client.post(
-        "/api/v1/chat/stream", json={"messages": [{"role": "user", "content": "Hello"}]}
+        "/api/v1/chat/stream", json={"messages": "Hello"}
     )
     assert response.status_code in [401, 403]
 
