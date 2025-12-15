@@ -24,7 +24,6 @@ class Settings(BaseSettings):
 
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
-    OAUTH_REDIRECT_URI: str = "http://localhost:7860/auth/callback"
 
     ADMIN_EMAIL: str
 

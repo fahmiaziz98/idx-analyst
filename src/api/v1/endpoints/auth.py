@@ -43,21 +43,27 @@ async def oauth_callback(
     code: str = Query(..., description="Authorization code from google"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Handle OAuth callback from Google"""
-    try:
-        # ✅ FIX: Add detailed logging
-        logger.info(f"OAuth callback received with code: {code[:10]}...")
+    """
+    Handle OAuth callback from Google
 
-        # Try to exchange code for token
+    Flow:
+    - Exchange authorization code for access token
+    - Get user info from Google
+    - Check if user exists
+    - Create or update user
+    - Create JWT token
+    - Redirect to frontend
+
+    Query params:
+        code: Authorization code from google
+    """
+    try:
         try:
-            logger.info("Attempting to exchange code for access token...")
             token = await oauth.google.authorize_access_token(request)
-            logger.info("Successfully received access token")
         except Exception as token_error:
             logger.error(f"Failed to exchange code for token: {token_error}")
             logger.error(f"Traceback: {traceback.format_exc()}")
 
-            # ✅ More specific error for network issues
             if "Name or service not known" in str(token_error):
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -67,9 +73,7 @@ async def oauth_callback(
 
         # Get user info
         try:
-            logger.info("Fetching user info from Google...")
             user_info = await get_user_info(token)
-            logger.info(f"User info received: {user_info.get('email', 'unknown')}")
         except Exception as info_error:
             logger.error(f"Failed to get user info: {info_error}")
             raise HTTPException(
@@ -103,7 +107,6 @@ async def oauth_callback(
             user.last_login = datetime.now(UTC)
             await db.commit()
             await db.refresh(user)
-            logger.info(f"Updated existing user: {email}")
         else:
             # Create new user
             role = UserRole.ADMIN if is_admin_email(email) else UserRole.USER
@@ -117,7 +120,6 @@ async def oauth_callback(
             db.add(user)
             await db.commit()
             await db.refresh(user)
-            logger.info(f"Created new user: {email}")
 
         # Create JWT token
         jwt_token = create_access_token(user_id=user.id, role=user.role.value, email=user.email)
@@ -126,7 +128,6 @@ async def oauth_callback(
         frontend_url = "http://localhost:8501"
         redirect_url = f"{frontend_url}?token={jwt_token}"
 
-        logger.info(f"OAuth flow completed successfully for {email}")
         return RedirectResponse(url=redirect_url)
 
     except HTTPException:
@@ -208,10 +209,6 @@ async def logout(user: User = Depends(get_current_user)):
             "message": "Logged out successfully"
         }
     """
-    # Optional: Update last activity atau log logout event
-    # user.last_activity = datetime.utcnow()
-    # await db.commit()
-
     return {"message": "Logged out successfully", "email": user.email}
 
 
