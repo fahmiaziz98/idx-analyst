@@ -17,22 +17,6 @@ oauth.register(
 )
 
 
-async def get_google_login_url(redirect_uri: str) -> str:
-    """
-    Generate Google OAuth authorization URL.
-
-    This URL will redirect the user to Google's consent screen.
-
-    Args:
-        redirect_uri: Callback URL after authorization
-
-    Returns:
-        Google authorization URL
-
-    """
-    return await oauth.google.authorize_redirect_url(redirect_uri)
-
-
 async def get_user_info(token: dict) -> dict | None:
     """
     Get user info from Google using access token.
