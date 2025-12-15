@@ -16,7 +16,15 @@ class UserRepository:
         self.db = db
 
     async def get_by_email(self, email: str) -> User | None:
-        """Get user by email address."""
+        """
+        Get user by email address.
+        
+        Args:
+            email: User's email address
+        
+        Returns:
+            User object if found, None otherwise
+        """
         result = await self.db.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
@@ -27,7 +35,18 @@ class UserRepository:
         avatar_url: str | None,
         role: UserRole = UserRole.USER,
     ) -> User:
-        """Create a new user."""
+        """
+        Create a new user.
+        
+        Args:
+            email: User's email address
+            name: User's name
+            avatar_url: URL to user's avatar image
+            role: User's role (default: USER)
+        
+        Returns:
+            User object
+        """
         user = User(
             email=email,
             name=name,
@@ -41,7 +60,17 @@ class UserRepository:
         return user
 
     async def update(self, user: User, name: str | None = None, avatar_url: str | None = None) -> User:
-        """Update existing user."""
+        """
+        Update existing user.
+        
+        Args:
+            user: User object to update
+            name: New user name (optional)
+            avatar_url: New avatar URL (optional)
+        
+        Returns:
+            Updated User object
+        """
         if name:
             user.name = name
         if avatar_url:
