@@ -1,18 +1,16 @@
 import traceback
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependency import get_current_user
-from src.auth.jwt import create_access_token
-from src.auth.oauth import get_user_info, is_admin_email, oauth
+from src.auth.oauth import oauth
 from src.core.config import settings
-from src.database.models import User, UserRole
+from src.database.models import User
 from src.database.session import get_db
+from src.services.auth_service import AuthService
 
 router = APIRouter()
 
@@ -45,103 +43,24 @@ async def oauth_callback(
 ):
     """
     Handle OAuth callback from Google
-
-    Flow:
-    - Exchange authorization code for access token
-    - Get user info from Google
-    - Check if user exists
-    - Create or update user
-    - Create JWT token
-    - Redirect to frontend
-
-    Query params:
-        code: Authorization code from google
+    
+    Delegates to AuthService.
     """
     try:
-        try:
-            token = await oauth.google.authorize_access_token(request)
-        except Exception as token_error:
-            logger.error(f"Failed to exchange code for token: {token_error}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-
-            if "Name or service not known" in str(token_error):
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Cannot reach Google OAuth servers. Check your internet connection or DNS settings.",
-                )
-            raise
-
-        # Get user info
-        try:
-            user_info = await get_user_info(token)
-        except Exception as info_error:
-            logger.error(f"Failed to get user info: {info_error}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to get user info from Google: {str(info_error)}",
-            )
-
-        if not user_info:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get user info from Google",
-            )
-
-        email = user_info.get("email")
-        if not email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Email not provided by Google"
-            )
-
-        name = user_info.get("name", email.split("@")[0])
-        avatar_url = user_info.get("picture")
-
-        # Check if user exists
-        result = await db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
-
-        if user:
-            # Update existing user
-            user.name = name
-            user.avatar_url = avatar_url
-            user.last_login = datetime.now(UTC)
-            await db.commit()
-            await db.refresh(user)
-        else:
-            # Create new user
-            role = UserRole.ADMIN if is_admin_email(email) else UserRole.USER
-            user = User(
-                email=email,
-                name=name,
-                avatar_url=avatar_url,
-                last_login=datetime.now(UTC),
-                role=role,
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-
-        # Create JWT token
-        jwt_token = create_access_token(user_id=user.id, role=user.role.value, email=user.email)
-
-        # Redirect to frontend
-        frontend_url = "http://localhost:8501"
-        redirect_url = f"{frontend_url}?token={jwt_token}"
-
+        auth_service = AuthService(db)
+        redirect_url = await auth_service.handle_google_callback(request)
         return RedirectResponse(url=redirect_url)
 
     except HTTPException:
         raise
     except Exception as e:
-        # ✅ Detailed error logging
         logger.error(f"OAuth callback error: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication failed: {str(e)}",
-        )
+        ) from e
 
 
 # ===== Get Current User =====
