@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from jose import JWTError, jwt
 
@@ -46,7 +46,7 @@ def create_access_token(
     Returns:
         str: JWT access token
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     if expires_delta:
         expire = now + expires_delta
@@ -102,8 +102,8 @@ def verify_token(token: str) -> TokenData:
             raise JWTError("Invalid token")
 
         return TokenData(user_id, role, email)
-    except JWTError as e:
-        raise JWTError("Invalid token") from e
+    except JWTError:
+        return None
 
 
 def get_token_expiration(token: str) -> datetime | None:
@@ -119,7 +119,7 @@ def get_token_expiration(token: str) -> datetime | None:
     """
     payload = decode_token(token)
     if payload and "exp" in payload:
-        return datetime.fromtimestamp(payload["exp"])
+        return datetime.fromtimestamp(payload["exp"], tz=UTC)
     return None
 
 
@@ -135,7 +135,7 @@ def is_token_expired(token: str) -> bool:
     """
     exp_time = get_token_expiration(token)
     if exp_time:
-        return datetime.utcnow() > exp_time
+        return datetime.now(UTC) > exp_time
     return True  # Jika tidak
 
 

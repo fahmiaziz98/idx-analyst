@@ -1,5 +1,4 @@
-from collections.abc import AsyncGenerator
-
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.core import settings
@@ -7,10 +6,12 @@ from src.core import settings
 # Create the asynchronous database engine
 engine = create_async_engine(
     url=settings.DATABASE_URL,
-    echo=True,  # set false in production
+    echo=False,  # set false in production
     pool_size=5,  # adjust based on your needs
     max_overflow=10,  # adjust based on your needs
     pool_pre_ping=True,  # to check if connections are alive
+    pool_timeout=60,
+    pool_recycle=3600,
 )
 
 # sessionmaker factory for creating new AsyncSession instances
@@ -21,17 +22,15 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncSession:
     """
-    Dependency that provides an asynchronous database session.
-    Yields:
-        AsyncSession: An asynchronous database session.
+    Dependency for getting async database session.
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
             await session.rollback()
             raise
         finally:

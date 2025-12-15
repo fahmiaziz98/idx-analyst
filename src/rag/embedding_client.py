@@ -1,11 +1,12 @@
-import httpx
-from datetime import datetime, timezone
-from loguru import logger
-from typing import List, Dict, Any, Optional, Union
-from circuitbreaker import circuit, CircuitBreakerError
+from datetime import UTC, datetime
+from typing import Any
 
-from src.core.exception import ServiceMaintenanceError
+import httpx
+from circuitbreaker import CircuitBreakerError, circuit
+from loguru import logger
+
 from src.core import settings
+from src.core.exception import ServiceMaintenanceError
 
 
 class EmbeddingAPIClient:
@@ -38,26 +39,23 @@ class EmbeddingAPIClient:
         # CircuitBreaker lib calculates remaining time
         # Note: 'open_remaining' returns float seconds
         remaining = int(e._circuit_breaker.open_remaining)
-        
+
         # Calculate absolute reset time
         # We use current UTC time + remaining seconds
-        reset_time = datetime.now(timezone.utc).replace(tzinfo=None) 
-        
-        logger.warning(f"Circuit '{service_name}' OPEN. Remaining: {remaining}s")
-        
-        raise ServiceMaintenanceError(
-            service_name=service_name,
-            reset_time=reset_time,
-            remaining_seconds=remaining
-        ) from e
+        reset_time = datetime.now(UTC).replace(tzinfo=None)
 
+        logger.warning(f"Circuit '{service_name}' OPEN. Remaining: {remaining}s")
+
+        raise ServiceMaintenanceError(
+            service_name=service_name, reset_time=reset_time, remaining_seconds=remaining
+        ) from e
 
     # === Dense Embeddings ===
     @circuit(
-        failure_threshold=2, 
-        recovery_timeout=60, 
-        expected_exception=httpx.HTTPError, 
-        name="embedding-dense"
+        failure_threshold=2,
+        recovery_timeout=60,
+        expected_exception=httpx.HTTPError,
+        name="embedding-dense",
     )
     async def _embed_dense_request(self, payload: dict):
         """
@@ -73,9 +71,7 @@ class EmbeddingAPIClient:
         return response.json()
 
     async def get_dense_embeddings(
-        self, 
-        texts: Union[str, List[str]],
-        model: str = "qwen3-0.6b"
+        self, texts: str | list[str], model: str = "qwen3-0.6b"
     ) -> Any:
         """
         Public wrapper to handle circuit breaker errors gracefully.
@@ -88,7 +84,7 @@ class EmbeddingAPIClient:
         try:
             payload = {"input": texts, "model": model}
             return await self._embed_dense_request(payload)
-            
+
         except CircuitBreakerError as e:
             self._handle_circuit_error(e, "Embedding Service (Dense)")
         except httpx.HTTPError as e:
@@ -97,10 +93,10 @@ class EmbeddingAPIClient:
 
     # === Sparse Embeddings ===
     @circuit(
-        failure_threshold=2, 
-        recovery_timeout=60, 
-        expected_exception=httpx.HTTPError, 
-        name="embedding-sparse"
+        failure_threshold=2,
+        recovery_timeout=60,
+        expected_exception=httpx.HTTPError,
+        name="embedding-sparse",
     )
     async def _embed_sparse_request(self, payload: dict):
         """
@@ -116,9 +112,7 @@ class EmbeddingAPIClient:
         return response.json()
 
     async def get_sparse_embeddings(
-        self, 
-        texts: Union[str, List[str]],
-        model: str = "splade-pp-v2"
+        self, texts: str | list[str], model: str = "splade-pp-v2"
     ) -> Any:
         """
         Public wrapper to handle circuit breaker errors gracefully.
@@ -131,7 +125,7 @@ class EmbeddingAPIClient:
         try:
             payload = {"input": texts, "model": model}
             return await self._embed_sparse_request(payload)
-            
+
         except CircuitBreakerError as e:
             self._handle_circuit_error(e, "Embedding Service (Sparse)")
         except httpx.HTTPError as e:
@@ -140,10 +134,10 @@ class EmbeddingAPIClient:
 
     # === Reranking ===
     @circuit(
-        failure_threshold=2, 
-        recovery_timeout=60, 
-        expected_exception=httpx.HTTPError, 
-        name="embedding-rerank"
+        failure_threshold=2,
+        recovery_timeout=60,
+        expected_exception=httpx.HTTPError,
+        name="embedding-rerank",
     )
     async def _rerank_request(self, payload: dict):
         """
@@ -159,11 +153,7 @@ class EmbeddingAPIClient:
         return response.json()
 
     async def rerank_documents(
-        self, 
-        documents: List[str], 
-        query: str, 
-        model: str = "bge-v2-m3", 
-        top_k: int = 5
+        self, documents: list[str], query: str, model: str = "bge-v2-m3", top_k: int = 5
     ) -> Any:
         """
         Public wrapper to handle circuit breaker errors gracefully.
@@ -191,19 +181,22 @@ class EmbeddingAPIClient:
             raise e
 
     @staticmethod
-    def get_circuit_status() -> Dict[str, Any]:
+    def get_circuit_status() -> dict[str, Any]:
         """Get monitoring status"""
         from circuitbreaker import CircuitBreakerMonitor
+
         return {
             c.name: {
                 "state": "OPEN" if c.opened else "CLOSED",
                 "failures": c.failure_count,
-                "open_remaining": c.open_remaining if c.opened else 0
+                "open_remaining": c.open_remaining if c.opened else 0,
             }
             for c in CircuitBreakerMonitor.get_circuits()
         }
 
-_embedding_client_instance: Optional[EmbeddingAPIClient] = None
+
+_embedding_client_instance: EmbeddingAPIClient | None = None
+
 
 def get_embedding_client() -> EmbeddingAPIClient:
     """

@@ -58,7 +58,7 @@ def setup_middleware(app: FastAPI):
     """
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.allowed_origins_list,
+        allow_origins=settings.ALLOWED_ORIGINS,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
@@ -69,4 +69,8 @@ def setup_middleware(app: FastAPI):
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    logger.info("Middlewares (CORS, SlowAPI, Metrics) configured.")
+    from starlette.middleware.sessions import SessionMiddleware
+
+    app.add_middleware(SessionMiddleware, secret_key=settings.JWT_SECRET)
+
+    logger.info("Middlewares (CORS, SlowAPI, Metrics, Session) configured.")

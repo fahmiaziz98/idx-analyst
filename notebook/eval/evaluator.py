@@ -11,13 +11,14 @@ from loguru import logger
 
 # Configure plotting style
 sns.set_style("whitegrid")
-plt.rcParams['figure.figsize'] = (12, 6)
-plt.rcParams['font.size'] = 10
+plt.rcParams["figure.figsize"] = (12, 6)
+plt.rcParams["font.size"] = 10
 
 
 @dataclass
 class EvaluationResult:
     """Container for single query evaluation result"""
+
     query_id: str
     query: str
     ground_truth_id: str
@@ -77,9 +78,7 @@ class RAGEvaluator:
 
     @staticmethod
     def calculate_ndcg(
-        retrieved_ids: list[str],
-        ground_truth_id: str,
-        k: int | None = None
+        retrieved_ids: list[str], ground_truth_id: str, k: int | None = None
     ) -> float:
         """
         Calculate NDCG@K (Normalized Discounted Cumulative Gain)
@@ -122,14 +121,14 @@ class RAGEvaluator:
     async def evaluate_query(
         self,
         query_data: dict[str, Any],
-        vector_store, 
+        vector_store,
         collection_name: str,
         dense_model: str,
         sparse_model: str,
         dense_instruction: str | None = None,
         top_k: int = 10,
         use_reranking: bool = False,
-        **search_kwargs
+        **search_kwargs,
     ) -> EvaluationResult:
         """
         Evaluate single query
@@ -149,10 +148,10 @@ class RAGEvaluator:
         Returns:
             EvaluationResult object
         """
-        query_id = query_data['id']
-        query = query_data['question']
-        ground_truth_id = int(query_data['id'])  
-        
+        query_id = query_data["id"]
+        query = query_data["question"]
+        ground_truth_id = int(query_data["id"])
+
         # Measure latency
         start_time = time.perf_counter()
 
@@ -166,14 +165,14 @@ class RAGEvaluator:
                 dense_instruction=dense_instruction,
                 top_k=top_k,
                 use_reranking=use_reranking,
-                **search_kwargs
+                **search_kwargs,
             )
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 
             # Extract IDs and scores
-            retrieved_ids = [r['id'] for r in results]
-            scores = [r.get('score', 0.0) for r in results]
+            retrieved_ids = [r["id"] for r in results]
+            scores = [r.get("score", 0.0) for r in results]
 
             # Calculate metrics
             hit = self.calculate_hit_rate(retrieved_ids, ground_truth_id)
@@ -190,7 +189,7 @@ class RAGEvaluator:
                 mrr=mrr,
                 ndcg=ndcg,
                 rank=rank,
-                latency_ms=latency_ms
+                latency_ms=latency_ms,
             )
 
             return result
@@ -209,7 +208,7 @@ class RAGEvaluator:
                 mrr=0.0,
                 ndcg=0.0,
                 rank=None,
-                latency_ms=0.0
+                latency_ms=0.0,
             )
 
     async def evaluate_dataset(
@@ -223,7 +222,7 @@ class RAGEvaluator:
         top_k: int = 10,
         use_reranking: bool = False,
         verbose: bool = True,
-        **search_kwargs
+        **search_kwargs,
     ) -> pd.DataFrame:
         """
         Evaluate entire dataset
@@ -248,13 +247,13 @@ class RAGEvaluator:
 
         total = len(eval_dataset)
 
-        logger.info(f"\n{'='*70}")
+        logger.info(f"\n{'=' * 70}")
         logger.info("🧪 STARTING EVALUATION")
-        logger.info(f"{'='*70}")
+        logger.info(f"{'=' * 70}")
         logger.info(f"Dataset size: {total} queries")
         logger.info(f"Top-K: {top_k}")
         logger.info(f"Reranking: {use_reranking}")
-        logger.info(f"{'='*70}\n")
+        logger.info(f"{'=' * 70}\n")
 
         # Evaluate each query
         for i, query_data in enumerate(eval_dataset, 1):
@@ -262,7 +261,7 @@ class RAGEvaluator:
                 logger.info(f"[{i}/{total}] Evaluating: {query_data['question'][:60]}...")
 
             # ⏳ Cohere rate limit: delay setiap 10 query
-            if use_reranking and search_kwargs.get('use_cohere', False) and i % 10 == 0 and i > 0:
+            if use_reranking and search_kwargs.get("use_cohere", False) and i % 10 == 0 and i > 0:
                 if verbose:
                     logger.warning("⏳ Cohere rate limit: waiting 65 seconds...")
                 await asyncio.sleep(65)
@@ -276,15 +275,17 @@ class RAGEvaluator:
                 dense_instruction=dense_instruction,
                 top_k=top_k,
                 use_reranking=use_reranking,
-                **search_kwargs
+                **search_kwargs,
             )
 
             self.results.append(result)
 
             if verbose:
                 status = "✅ HIT" if result.hit else "❌ MISS"
-                logger.info(f"   {status} | MRR: {result.mrr:.3f} | NDCG: {result.ndcg:.3f} | "
-                           f"Latency: {result.latency_ms:.1f}ms")
+                logger.info(
+                    f"   {status} | MRR: {result.mrr:.3f} | NDCG: {result.ndcg:.3f} | "
+                    f"Latency: {result.latency_ms:.1f}ms"
+                )
                 if result.rank:
                     logger.info(f"   📍 Found at rank {result.rank}")
                 logger.info("")
@@ -303,24 +304,23 @@ class RAGEvaluator:
         """
         data = []
         for result in self.results:
-            data.append({
-                'query_id': result.query_id,
-                'query': result.query,
-                'ground_truth_id': result.ground_truth_id,
-                'hit': result.hit,
-                'mrr': result.mrr,
-                'ndcg': result.ndcg,
-                'rank': result.rank if result.rank else np.nan,
-                'latency_ms': result.latency_ms,
-                'num_retrieved': len(result.retrieved_ids)
-            })
+            data.append(
+                {
+                    "query_id": result.query_id,
+                    "query": result.query,
+                    "ground_truth_id": result.ground_truth_id,
+                    "hit": result.hit,
+                    "mrr": result.mrr,
+                    "ndcg": result.ndcg,
+                    "rank": result.rank if result.rank else np.nan,
+                    "latency_ms": result.latency_ms,
+                    "num_retrieved": len(result.retrieved_ids),
+                }
+            )
 
         return pd.DataFrame(data)
 
-    def calculate_aggregate_metrics(
-        self,
-        k_values: list[int] = [3, 5, 10, 20]
-    ) -> dict[str, Any]:
+    def calculate_aggregate_metrics(self, k_values: list[int] = [3, 5, 10, 20]) -> dict[str, Any]:
         """
         Calculate aggregate metrics across all queries
 
@@ -351,10 +351,7 @@ class RAGEvaluator:
         # Hit Rate at different K values
         hit_rates_at_k = {}
         for k in k_values:
-            hits_at_k = sum(
-                1 for r in self.results
-                if r.ground_truth_id in r.retrieved_ids[:k]
-            )
+            hits_at_k = sum(1 for r in self.results if r.ground_truth_id in r.retrieved_ids[:k])
             hit_rates_at_k[f"hit_rate@{k}"] = hits_at_k / total_queries
 
         # Rank distribution
@@ -362,25 +359,25 @@ class RAGEvaluator:
         rank_distribution = {}
         if ranks:
             rank_distribution = {
-                'mean_rank': np.mean(ranks),
-                'median_rank': np.median(ranks),
-                'min_rank': min(ranks),
-                'max_rank': max(ranks)
+                "mean_rank": np.mean(ranks),
+                "median_rank": np.median(ranks),
+                "min_rank": min(ranks),
+                "max_rank": max(ranks),
             }
 
         aggregate = {
-            'total_queries': total_queries,
-            'hits': sum(r.hit for r in self.results),
-            'misses': total_queries - sum(r.hit for r in self.results),
-            'hit_rate': hit_rate,
-            'mean_mrr': mean_mrr,
-            'mean_ndcg': mean_ndcg,
+            "total_queries": total_queries,
+            "hits": sum(r.hit for r in self.results),
+            "misses": total_queries - sum(r.hit for r in self.results),
+            "hit_rate": hit_rate,
+            "mean_mrr": mean_mrr,
+            "mean_ndcg": mean_ndcg,
             **hit_rates_at_k,
-            'mean_latency_ms': mean_latency,
-            'p50_latency_ms': p50_latency,
-            'p95_latency_ms': p95_latency,
-            'p99_latency_ms': p99_latency,
-            **rank_distribution
+            "mean_latency_ms": mean_latency,
+            "p50_latency_ms": p50_latency,
+            "p95_latency_ms": p95_latency,
+            "p99_latency_ms": p99_latency,
+            **rank_distribution,
         }
 
         return aggregate
@@ -392,9 +389,9 @@ class RAGEvaluator:
         Args:
             aggregate_metrics: Dictionary from calculate_aggregate_metrics()
         """
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("📊 EVALUATION SUMMARY")
-        print(f"{'='*70}\n")
+        print(f"{'=' * 70}\n")
 
         print("Dataset Overview:")
         print(f"  • Total Queries: {aggregate_metrics['total_queries']}")
@@ -412,7 +409,7 @@ class RAGEvaluator:
             if key in aggregate_metrics:
                 print(f"  • Hit Rate@{k}: {aggregate_metrics[key]:.2%}")
 
-        if 'mean_rank' in aggregate_metrics:
+        if "mean_rank" in aggregate_metrics:
             print("\nRank Statistics (for hits):")
             print(f"  • Mean Rank: {aggregate_metrics['mean_rank']:.2f}")
             print(f"  • Median Rank: {aggregate_metrics['median_rank']:.1f}")
@@ -425,14 +422,14 @@ class RAGEvaluator:
         print(f"  • P95: {aggregate_metrics['p95_latency_ms']:.1f}ms")
         print(f"  • P99: {aggregate_metrics['p99_latency_ms']:.1f}ms")
 
-        print(f"\n{'='*70}\n")
+        print(f"\n{'=' * 70}\n")
 
     def plot_results(
         self,
         name: str,
         aggregate_metrics: dict[str, Any],
         df: pd.DataFrame,
-        save_path: str | None = None
+        save_path: str | None = None,
     ):
         """
         Create comprehensive visualization of evaluation results
@@ -443,117 +440,140 @@ class RAGEvaluator:
             save_path: Optional path to save figure
         """
         fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-        fig.suptitle(f'Evaluation Results {name}', fontsize=16, fontweight='bold')
+        fig.suptitle(f"Evaluation Results {name}", fontsize=16, fontweight="bold")
 
         # 1. Hit Rate at Different K
         ax1 = axes[0, 0]
         k_values = [3, 5, 10, 20]
-        hit_rates = [aggregate_metrics.get(f'hit_rate@{k}', 0) * 100 for k in k_values]
+        hit_rates = [aggregate_metrics.get(f"hit_rate@{k}", 0) * 100 for k in k_values]
 
-        bars1 = ax1.bar(range(len(k_values)), hit_rates, color='steelblue', alpha=0.8)
-        ax1.set_xlabel('Top-K', fontweight='bold')
-        ax1.set_ylabel('Hit Rate (%)', fontweight='bold')
-        ax1.set_title('Hit Rate@K', fontweight='bold')
+        bars1 = ax1.bar(range(len(k_values)), hit_rates, color="steelblue", alpha=0.8)
+        ax1.set_xlabel("Top-K", fontweight="bold")
+        ax1.set_ylabel("Hit Rate (%)", fontweight="bold")
+        ax1.set_title("Hit Rate@K", fontweight="bold")
         ax1.set_xticks(range(len(k_values)))
-        ax1.set_xticklabels([f'@{k}' for k in k_values])
+        ax1.set_xticklabels([f"@{k}" for k in k_values])
         ax1.set_ylim([0, 105])
-        ax1.grid(axis='y', alpha=0.3)
+        ax1.grid(axis="y", alpha=0.3)
 
         # Add value labels on bars
         for bar in bars1:
             height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1f}%',
-                    ha='center', va='bottom', fontweight='bold')
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontweight="bold",
+            )
 
         # 2. Primary Metrics Comparison
         ax2 = axes[0, 1]
-        metrics = ['Hit Rate', 'MRR', 'NDCG']
+        metrics = ["Hit Rate", "MRR", "NDCG"]
         values = [
-            aggregate_metrics['hit_rate'] * 100,
-            aggregate_metrics['mean_mrr'] * 100,
-            aggregate_metrics['mean_ndcg'] * 100
+            aggregate_metrics["hit_rate"] * 100,
+            aggregate_metrics["mean_mrr"] * 100,
+            aggregate_metrics["mean_ndcg"] * 100,
         ]
 
-        bars2 = ax2.bar(metrics, values, color=['#2ecc71', '#3498db', '#e74c3c'], alpha=0.8)
-        ax2.set_ylabel('Score (%)', fontweight='bold')
-        ax2.set_title('Primary Metrics Comparison', fontweight='bold')
+        bars2 = ax2.bar(metrics, values, color=["#2ecc71", "#3498db", "#e74c3c"], alpha=0.8)
+        ax2.set_ylabel("Score (%)", fontweight="bold")
+        ax2.set_title("Primary Metrics Comparison", fontweight="bold")
         ax2.set_ylim([0, 105])
-        ax2.grid(axis='y', alpha=0.3)
+        ax2.grid(axis="y", alpha=0.3)
 
         for bar in bars2:
             height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1f}%',
-                    ha='center', va='bottom', fontweight='bold')
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{height:.1f}%",
+                ha="center",
+                va="bottom",
+                fontweight="bold",
+            )
 
         # 3. Rank Distribution (for hits only)
         ax3 = axes[0, 2]
-        ranks = df[df['hit'] == 1]['rank'].dropna()
+        ranks = df[df["hit"] == 1]["rank"].dropna()
 
         if len(ranks) > 0:
-            ax3.hist(ranks, bins=range(1, int(ranks.max()) + 2),
-                    color='coral', alpha=0.7, edgecolor='black')
-            ax3.set_xlabel('Rank Position', fontweight='bold')
-            ax3.set_ylabel('Frequency', fontweight='bold')
-            ax3.set_title('Rank Distribution (Hits Only)', fontweight='bold')
-            ax3.grid(axis='y', alpha=0.3)
+            ax3.hist(
+                ranks,
+                bins=range(1, int(ranks.max()) + 2),
+                color="coral",
+                alpha=0.7,
+                edgecolor="black",
+            )
+            ax3.set_xlabel("Rank Position", fontweight="bold")
+            ax3.set_ylabel("Frequency", fontweight="bold")
+            ax3.set_title("Rank Distribution (Hits Only)", fontweight="bold")
+            ax3.grid(axis="y", alpha=0.3)
 
             # Add mean line
             mean_rank = ranks.mean()
-            ax3.axvline(mean_rank, color='red', linestyle='--', linewidth=2,
-                       label=f'Mean: {mean_rank:.2f}')
+            ax3.axvline(
+                mean_rank, color="red", linestyle="--", linewidth=2, label=f"Mean: {mean_rank:.2f}"
+            )
             ax3.legend()
         else:
-            ax3.text(0.5, 0.5, 'No hits to display',
-                    ha='center', va='center', transform=ax3.transAxes)
+            ax3.text(
+                0.5, 0.5, "No hits to display", ha="center", va="center", transform=ax3.transAxes
+            )
 
         # 4. Latency Distribution
         ax4 = axes[1, 0]
-        latencies = df['latency_ms'].dropna()
+        latencies = df["latency_ms"].dropna()
 
-        ax4.hist(latencies, bins=30, color='purple', alpha=0.7, edgecolor='black')
-        ax4.set_xlabel('Latency (ms)', fontweight='bold')
-        ax4.set_ylabel('Frequency', fontweight='bold')
-        ax4.set_title('Latency Distribution', fontweight='bold')
-        ax4.grid(axis='y', alpha=0.3)
+        ax4.hist(latencies, bins=30, color="purple", alpha=0.7, edgecolor="black")
+        ax4.set_xlabel("Latency (ms)", fontweight="bold")
+        ax4.set_ylabel("Frequency", fontweight="bold")
+        ax4.set_title("Latency Distribution", fontweight="bold")
+        ax4.grid(axis="y", alpha=0.3)
 
         # Add percentile lines
-        p50 = aggregate_metrics['p50_latency_ms']
-        p95 = aggregate_metrics['p95_latency_ms']
-        ax4.axvline(p50, color='green', linestyle='--', linewidth=2, label=f'P50: {p50:.1f}ms')
-        ax4.axvline(p95, color='red', linestyle='--', linewidth=2, label=f'P95: {p95:.1f}ms')
+        p50 = aggregate_metrics["p50_latency_ms"]
+        p95 = aggregate_metrics["p95_latency_ms"]
+        ax4.axvline(p50, color="green", linestyle="--", linewidth=2, label=f"P50: {p50:.1f}ms")
+        ax4.axvline(p95, color="red", linestyle="--", linewidth=2, label=f"P95: {p95:.1f}ms")
         ax4.legend()
 
         # 5. Hit vs Miss Pie Chart
         ax5 = axes[1, 1]
-        hits = aggregate_metrics['hits']
-        misses = aggregate_metrics['misses']
+        hits = aggregate_metrics["hits"]
+        misses = aggregate_metrics["misses"]
 
-        colors = ['#2ecc71', '#e74c3c']
+        colors = ["#2ecc71", "#e74c3c"]
         explode = (0.05, 0)
-        ax5.pie([hits, misses], labels=['Hits', 'Misses'], autopct='%1.1f%%',
-               colors=colors, explode=explode, startangle=90,
-               textprops={'fontweight': 'bold', 'fontsize': 12})
-        ax5.set_title('Hit vs Miss Distribution', fontweight='bold')
+        ax5.pie(
+            [hits, misses],
+            labels=["Hits", "Misses"],
+            autopct="%1.1f%%",
+            colors=colors,
+            explode=explode,
+            startangle=90,
+            textprops={"fontweight": "bold", "fontsize": 12},
+        )
+        ax5.set_title("Hit vs Miss Distribution", fontweight="bold")
 
         # 6. MRR vs NDCG Scatter
         ax6 = axes[1, 2]
-        ax6.scatter(df['mrr'], df['ndcg'], alpha=0.6, s=50, color='teal')
-        ax6.set_xlabel('MRR', fontweight='bold')
-        ax6.set_ylabel('NDCG@10', fontweight='bold')
-        ax6.set_title('MRR vs NDCG Correlation', fontweight='bold')
+        ax6.scatter(df["mrr"], df["ndcg"], alpha=0.6, s=50, color="teal")
+        ax6.set_xlabel("MRR", fontweight="bold")
+        ax6.set_ylabel("NDCG@10", fontweight="bold")
+        ax6.set_title("MRR vs NDCG Correlation", fontweight="bold")
         ax6.grid(True, alpha=0.3)
 
         # Add diagonal reference line
-        max_val = max(df['mrr'].max(), df['ndcg'].max())
-        ax6.plot([0, max_val], [0, max_val], 'r--', alpha=0.5, label='Perfect correlation')
+        max_val = max(df["mrr"].max(), df["ndcg"].max())
+        ax6.plot([0, max_val], [0, max_val], "r--", alpha=0.5, label="Perfect correlation")
         ax6.legend()
 
         plt.tight_layout()
 
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
             logger.info(f"📊 Plot saved to: {save_path}")
 
         plt.show()

@@ -6,27 +6,28 @@ Document processor with continuous ID tracking and append mode.
 
 import json
 import time
-import fitz
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from tqdm import tqdm
+from pathlib import Path
+from typing import Any
 
-from loguru import logger
-from langchain.chat_models import init_chat_model
-from llama_cloud_services import LlamaParse
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.prompts import ChatPromptTemplate
-from pydantic import BaseModel, Field
+import fitz
 import tiktoken
-
+from langchain.chat_models import init_chat_model
+from langchain.prompts import ChatPromptTemplate
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from llama_cloud_services import LlamaParse
+from loguru import logger
+from pydantic import BaseModel, Field
+from tqdm import tqdm
 
 # ============================================================================
 # MODELS & PROMPTS
 # ============================================================================
 
+
 class OutputResponse(BaseModel):
     """Represents a structured response containing contextual information and a flag indicating if it's a header."""
+
     response: str = Field(..., description="contextual document")
     is_header: bool = Field(..., description="Flag indicating if the response is a header.")
 
@@ -75,13 +76,14 @@ def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
 
 
 # ============================================================================
-# DOCUMENT PROCESSOR 
+# DOCUMENT PROCESSOR
 # ============================================================================
+
 
 class DocumentProcessor:
     """
     Enhanced document processor with continuous ID tracking and append mode.
-    
+
     Key Features:
     - Automatic ID generation starting from last ID
     - Append mode: adds new chunks to existing JSON file
@@ -95,7 +97,7 @@ class DocumentProcessor:
         parse_mode: str = "parse_page_with_agent",
         model: str = "openai-gpt-4-1-mini",
         llm_contextual: str = "google",
-        llama_parse_key: str = None
+        llama_parse_key: str = None,
     ) -> None:
         """
         Initialize the DocumentProcessor with configuration.
@@ -108,7 +110,9 @@ class DocumentProcessor:
             llm_contextual: LLM provider for contextual enrichment
             llama_parse_key: LlamaParse API key
         """
-        self.llm_contextual = system_prompt | self._init_llm(llm_contextual).with_structured_output(OutputResponse)
+        self.llm_contextual = system_prompt | self._init_llm(llm_contextual).with_structured_output(
+            OutputResponse
+        )
         self.parser = self._init_parser(instruction, parse_mode, model, llama_parse_key)
         self.reset_stats()
 
@@ -117,7 +121,7 @@ class DocumentProcessor:
         if llm_type == "google":
             logger.info("Using Google gemini-2.5-flash...")
             return init_chat_model("gemini-2.5-flash", model_provider="google_genai")
-        
+
         logger.info("Using Google openai/gpt-oss-20b...")
         return init_chat_model("openai/gpt-oss-20b", model_provider="groq")
 
@@ -138,31 +142,31 @@ class DocumentProcessor:
     def reset_stats(self):
         """Reset processing statistics."""
         logger.info("Resetting processing stats...")
-        self.stats = {'processed': 0, 'success': 0, 'failed': 0}
+        self.stats = {"processed": 0, "success": 0, "failed": 0}
 
-    def _load_existing_data(self, output_path: Path) -> tuple[List[Dict], int]:
+    def _load_existing_data(self, output_path: Path) -> tuple[list[dict], int]:
         """
         Load existing JSON data and get last ID.
-        
+
         Returns:
             tuple: (existing_chunks, last_id)
         """
         if output_path.exists():
             logger.info(f"Loading existing data from {output_path}")
-            with open(output_path, 'r', encoding='utf-8') as f:
+            with open(output_path, encoding="utf-8") as f:
                 existing_data = json.load(f)
-                
+
             # Find the highest ID
             last_id = 0
             if existing_data:
-                last_id = max(chunk.get('id', 0) for chunk in existing_data)
-            
+                last_id = max(chunk.get("id", 0) for chunk in existing_data)
+
             # Count by ticker
             ticker_counts = {}
             for chunk in existing_data:
-                ticker = chunk.get('metadata', {}).get('tickers', 'unknown')
+                ticker = chunk.get("metadata", {}).get("tickers", "unknown")
                 ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
-            
+
             logger.info(f"Loaded {len(existing_data)} existing chunks, last ID: {last_id}")
             logger.info(f"Breakdown by ticker: {ticker_counts}")
             return existing_data, last_id
@@ -177,9 +181,9 @@ class DocumentProcessor:
         tickers: str,
         output_file: str,
         output_filename: str = "ALL_DATA.json",
-        start_page: Optional[int] = None,
-        end_page: Optional[int] = None,
-        mode: str = "append"
+        start_page: int | None = None,
+        end_page: int | None = None,
+        mode: str = "append",
     ):
         """
         Execute the complete document processing pipeline.
@@ -201,7 +205,7 @@ class DocumentProcessor:
 
         try:
             logger.info(f"🚀 Processing {input_file} in {mode.upper()} mode...")
-            
+
             # Extract pages if range specified
             if start_page and end_page:
                 input_file = self.extract_pages(input_file, start_page, end_page)
@@ -209,31 +213,22 @@ class DocumentProcessor:
             # Process document
             md_content = await self.extract_content(input_file)
             json_data = self.convert_to_json(
-                md_content,
-                tickers,
-                company_name,
-                start_page,
-                end_page
+                md_content, tickers, company_name, start_page, end_page
             )
             chunks = self.split_chunks(json_data)
             contextual_data = await self.add_context(chunks)
-            
+
             # Save with ID tracking
-            output_path = self.save_output(
-                contextual_data, 
-                output_file,
-                output_filename,
-                mode=mode
-            )
+            output_path = self.save_output(contextual_data, output_file, output_filename, mode=mode)
 
             # Update stats
-            self.stats['success'] += 1
+            self.stats["success"] += 1
             logger.success(f"Document processed successfully → {output_path}")
             return self.create_result(True, str(output_path), start_time)
 
         except Exception as e:
             logger.error(f"Error processing document: {e}")
-            self.stats['failed'] += 1
+            self.stats["failed"] += 1
             return self.create_result(False, str(e), start_time)
 
     def extract_pages(self, input_file: str, start_page: int, end_page: int) -> str:
@@ -257,15 +252,10 @@ class DocumentProcessor:
             return raw_content.get_markdown_documents(split_by_page=True)
         except Exception as e:
             logger.error(f"Error parsing document: {e}")
-            raise Exception(f"Error extracting content: {e}")
+            raise Exception(f"Error extracting content: {e}") from e
 
     def convert_to_json(
-        self,
-        markdown_content,
-        tickers: str,
-        company_name: str,
-        start_page: int,
-        end_page: int
+        self, markdown_content, tickers: str, company_name: str, start_page: int, end_page: int
     ):
         """Convert markdown to JSON with metadata."""
         logger.info("Converting markdown to JSON...")
@@ -273,33 +263,28 @@ class DocumentProcessor:
 
         for i, doc in enumerate(markdown_content):
             actual_page = start_page + i if start_page else doc.metadata.get("page_number", i + 1)
-            
-            metadata = doc.metadata.copy()
-            metadata.update({
-                "tickers": tickers,
-                "company_name": company_name,
-                "page_number": actual_page
-            })
 
-            json_data.append({
-                "text": doc.text,
-                "metadata": metadata
-            })
+            metadata = doc.metadata.copy()
+            metadata.update(
+                {"tickers": tickers, "company_name": company_name, "page_number": actual_page}
+            )
+
+            json_data.append({"text": doc.text, "metadata": metadata})
 
         return json_data
 
-    def split_chunks(self, data: List[Dict]):
+    def split_chunks(self, data: list[dict]):
         """Split text into chunks and filter by token count."""
         text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
             model_name="gpt-3.5-turbo",
             chunk_size=512,
             chunk_overlap=100,
-            separators=["\n\n", "\n", ".", " ", ""]
+            separators=["\n\n", "\n", ".", " ", ""],
         )
 
         chunks = []
         logger.info("Splitting text into chunks...")
-        
+
         for item in data:
             chunk_texts = text_splitter.split_text(item["text"])
 
@@ -307,36 +292,38 @@ class DocumentProcessor:
                 token_count = count_tokens(chunk)
 
                 if token_count >= 64:
-                    chunks.append({
-                        "chunk_text": chunk,
-                        "text": item["text"],
-                        "metadata": item["metadata"],
-                        "token_count": token_count
-                    })
+                    chunks.append(
+                        {
+                            "chunk_text": chunk,
+                            "text": item["text"],
+                            "metadata": item["metadata"],
+                            "token_count": token_count,
+                        }
+                    )
                 else:
                     logger.warning(f"Skipping chunk with {token_count} tokens")
 
         logger.success(f"Generated {len(chunks)} valid chunks")
         return chunks
 
-    async def add_context(self, chunks: List[Dict]):
+    async def add_context(self, chunks: list[dict]):
         """Add contextual information to chunks using LLM."""
         contextual_data = []
         logger.info("Adding context to chunks...")
 
         try:
             for chunk in tqdm(chunks, desc="Adding context"):
-                response = await self.llm_contextual.ainvoke({
-                    "company_name": chunk["metadata"]["company_name"],
-                    "document": chunk["text"],
-                    "chunk": chunk["chunk_text"]
-                })
+                response = await self.llm_contextual.ainvoke(
+                    {
+                        "company_name": chunk["metadata"]["company_name"],
+                        "document": chunk["text"],
+                        "chunk": chunk["chunk_text"],
+                    }
+                )
 
-                contextual_data.append({
-                    **chunk,
-                    "contextual_text": response.response,
-                    "is_header": response.is_header
-                })
+                contextual_data.append(
+                    {**chunk, "contextual_text": response.response, "is_header": response.is_header}
+                )
 
                 time.sleep(2)  # Rate limiting
 
@@ -344,29 +331,29 @@ class DocumentProcessor:
 
         except Exception as e:
             logger.error(f"Error adding context: {e}")
-            raise Exception(f"Error adding context: {e}")
+            raise Exception(f"Error adding context: {e}") from e
 
     def save_output(
-        self, 
-        new_data: List[Dict], 
+        self,
+        new_data: list[dict],
         output_file: str,
         output_filename: str = "ALL_DATA.json",
-        mode: str = "append"
+        mode: str = "append",
     ) -> Path:
         """
         Save data with ID tracking and append mode support.
-        
+
         Args:
             new_data: New chunks to save
             output_file: Output directory path
             output_filename: Name of output JSON file (default: ALL_DATA.json)
             mode: "append" or "new"
-            
+
         Returns:
             Path to saved file
         """
         logger.info(f"Saving output in {mode.upper()} mode...")
-        
+
         output_path = Path(output_file)
         output_path.mkdir(parents=True, exist_ok=True)
         final_file = output_path / output_filename
@@ -377,12 +364,12 @@ class DocumentProcessor:
             logger.info("Starting fresh (NEW mode)")
             existing_data, last_id = [], 0
 
-        new_ticker = new_data[0]['metadata']['tickers'] if new_data else 'unknown'
+        new_ticker = new_data[0]["metadata"]["tickers"] if new_data else "unknown"
         for i, chunk in enumerate(new_data, start=1):
-            chunk['id'] = last_id + i
+            chunk["id"] = last_id + i
 
         combined_data = existing_data + new_data
-        
+
         with open(final_file, "w", encoding="utf-8") as f:
             json.dump(combined_data, f, indent=4, ensure_ascii=False)
 
@@ -390,20 +377,20 @@ class DocumentProcessor:
             f"Saved {len(new_data)} new chunks for {new_ticker} "
             f"(Total: {len(combined_data)}, Last ID: {last_id + len(new_data)})"
         )
-        
+
         return final_file
 
     def create_result(self, success: bool, data: Any, start_time: datetime):
         """Create standardized processing result."""
         result = {
-            'status': 'COMPLETED' if success else 'FAILED',
-            'execution_time': (datetime.now() - start_time).total_seconds(),
-            'stats': self.stats.copy()
+            "status": "COMPLETED" if success else "FAILED",
+            "execution_time": (datetime.now() - start_time).total_seconds(),
+            "stats": self.stats.copy(),
         }
 
         if success:
-            result['data'] = data
+            result["data"] = data
         else:
-            result['error'] = data
+            result["error"] = data
 
         return result

@@ -1,14 +1,5 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, status
 from loguru import logger
-
-from src.core.security import validate_api_key
-
-
-async def get_current_api_key(api_key: str = Depends(validate_api_key)) -> str:
-    """
-    Dependency to get and validate current API key
-    """
-    return api_key
 
 
 async def verify_content_type(content_type: str = None):

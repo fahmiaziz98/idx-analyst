@@ -51,19 +51,20 @@ async def retrieve_documents(state: QueryState) -> list[dict[str, Any]]:
         dict[str, list[Document]]: A dictionary with a 'documents' key containing the list of retrieved documents.
     """
     from src.vector_db.vectorstore import get_retriever_instance
-    
+
     logger.info(f"queries: {state.query}")
     retriever = get_retriever_instance()
     response = await retriever.search(
-        state.query, 
+        state.query,
         collection_name=settings.COLLECTION,
         dense_instruction=settings.INSTRUCTION_QUERY,
         top_k=20,
         use_reranking=True,
         use_cohere=False,
-        rerank_top_k=10
+        rerank_top_k=10,
     )
-    return {"documents": response}   
+    return {"documents": response}
+
 
 async def web_search(state: QueryState) -> list[dict[str, Any]]:
     """

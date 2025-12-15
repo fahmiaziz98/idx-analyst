@@ -11,8 +11,8 @@ from qdrant_client import AsyncQdrantClient, models
 from tqdm.asyncio import tqdm as async_tqdm
 
 from src.core import settings
-from src.rag.embedding_client import get_embedding_client
 from src.core.exception import ServiceMaintenanceError
+from src.rag.embedding_client import get_embedding_client
 
 
 class QdrantVectoreStore:
@@ -69,7 +69,7 @@ class QdrantVectoreStore:
                 logger.error(f"Failed to create remote Qdrant client: {e}")
                 self.client = None
                 raise
-            
+
     async def create_collection(self, collection_name: str, dimension: int):
         """
         Create collection with hybrid vector configuration.
@@ -89,12 +89,12 @@ class QdrantVectoreStore:
                     collection_name=collection_name,
                     vectors_config={
                         self.DENSE_VECTOR_NAME: models.VectorParams(
-                            size=dimension, 
+                            size=dimension,
                             distance=models.Distance.COSINE,
                             on_disk=True,
                             quantization_config=models.BinaryQuantization(
                                 binary=models.BinaryQuantizationConfig(always_ram=True)
-                            )
+                            ),
                         )
                     },
                     sparse_vectors_config={
@@ -109,7 +109,7 @@ class QdrantVectoreStore:
                         full_scan_threshold=10000,
                         max_indexing_threads=0,
                         on_disk=True,
-                        payload_m=16
+                        payload_m=16,
                     ),
                     optimizers_config=models.OptimizersConfigDiff(
                         deleted_threshold=0.2,
@@ -118,8 +118,8 @@ class QdrantVectoreStore:
                         max_segment_size=None,
                         indexing_threshold=50000,
                         flush_interval_sec=10,
-                        max_optimization_threads=0
-                    )
+                        max_optimization_threads=0,
+                    ),
                 )
                 logger.success(f"Successfully created collection `{collection_name}`")
             else:
@@ -128,15 +128,15 @@ class QdrantVectoreStore:
             logger.error(f"Error creating collection: {e}")
 
     async def upload_documents(
-        self, 
+        self,
         collection_name: str,
-        documents: list[dict[str, Any]], 
+        documents: list[dict[str, Any]],
         dense_model: str = "qwen3-0.6b",
         sparse_model: str = "splade-pp-v2",
         dense_instruction: str | None = None,
         batch_size: int = 32,
         text_field: str = "contextual_text",
-        disable_indexing: bool = True
+        disable_indexing: bool = True,
     ) -> dict[str, int]:
         """
         Upload documents to collection with circuit breaker protection
@@ -154,7 +154,7 @@ class QdrantVectoreStore:
 
         Returns:
             {"successful": count, "failed": count}
-            
+
         Raises:
             ServiceMaintenanceError: When embedding service is in maintenance mode
         """
@@ -175,15 +175,14 @@ class QdrantVectoreStore:
             logger.info("Disabling HNSW indexing for bulk upload...")
             try:
                 await self.client.update_collection(
-                    collection_name=collection_name,
-                    hnsw_config=models.HnswConfigDiff(m=0)
+                    collection_name=collection_name, hnsw_config=models.HnswConfigDiff(m=0)
                 )
             except Exception as e:
                 logger.warning(f"Failed to disable indexing: {e}")
 
         try:
             for i in async_tqdm(range(0, total_docs, batch_size), desc="Uploading batches"):
-                batch = documents[i:i + batch_size]
+                batch = documents[i : i + batch_size]
                 points = []
 
                 texts = []
@@ -197,16 +196,16 @@ class QdrantVectoreStore:
 
                 try:
                     dense_responses = await self.api_client.get_dense_embeddings(
-                        texts=texts_dense,
-                        model=dense_model
+                        texts=texts_dense, model=dense_model
                     )
 
                     sparse_responses = await self.api_client.get_sparse_embeddings(
-                        texts=texts,
-                        model=sparse_model
+                        texts=texts, model=sparse_model
                     )
 
-                    for doc, dense_resp, sparse_resp in zip(batch, dense_responses, sparse_responses, strict=False):
+                    for doc, dense_resp, sparse_resp in zip(
+                        batch, dense_responses, sparse_responses, strict=False
+                    ):
                         try:
                             dense_embedding = self._parse_dense_embedding(dense_resp)
                             sparse_dict = self._parse_sparse_embedding(sparse_resp)
@@ -216,7 +215,7 @@ class QdrantVectoreStore:
                                 id=doc.get("id"),
                                 vector={
                                     self.DENSE_VECTOR_NAME: dense_embedding,
-                                    self.SPARSE_VECTOR_NAME: sparse_vector
+                                    self.SPARSE_VECTOR_NAME: sparse_vector,
                                 },
                                 payload={
                                     "id": doc.get("id"),
@@ -225,8 +224,10 @@ class QdrantVectoreStore:
                                     "metadata": doc.get("metadata", {}),
                                     "dense_model": dense_model,
                                     "sparse_model": sparse_model,
-                                    "upload_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                }
+                                    "upload_timestamp": datetime.now().strftime(
+                                        "%Y-%m-%d %H:%M:%S"
+                                    ),
+                                },
                             )
                             points.append(point)
 
@@ -238,9 +239,7 @@ class QdrantVectoreStore:
                     # Upload batch
                     if points:
                         await self.client.upsert(
-                            collection_name=collection_name,
-                            points=points,
-                            wait=False
+                            collection_name=collection_name, points=points, wait=False
                         )
                         successful_count += len(points)
 
@@ -248,7 +247,7 @@ class QdrantVectoreStore:
                     logger.error(f"Failed to process batch: {e}")
                     failed_count += len(batch)
                     continue
-            
+
             logger.success(f"Upload complete: {successful_count} succeeded, {failed_count} failed")
 
             # Re-enable indexing
@@ -257,7 +256,7 @@ class QdrantVectoreStore:
                 try:
                     await self.client.update_collection(
                         collection_name=collection_name,
-                        hnsw_config=models.HnswConfigDiff(m=8, ef_construct=32)
+                        hnsw_config=models.HnswConfigDiff(m=8, ef_construct=32),
                     )
                     logger.info("Indexing re-enabled. Building index...")
                 except Exception as e:
@@ -284,7 +283,7 @@ class QdrantVectoreStore:
         rerank_model: str | None = "bge-v2-m3",
         rerank_top_k: int = 10,
         use_cohere: bool = False,
-        cohere_model: str = "rerank-english-v3.0"
+        cohere_model: str = "rerank-english-v3.0",
     ) -> list[dict[str, Any]]:
         """
         Hybrid search with circuit breaker protection
@@ -304,7 +303,7 @@ class QdrantVectoreStore:
 
         Returns:
             List of documents with scores
-            
+
         Raises:
             ServiceMaintenanceError: When embedding service is in maintenance mode
         """
@@ -324,17 +323,13 @@ class QdrantVectoreStore:
                 query_dense = f"{dense_instruction}: {query}"
 
             dense_task = self.api_client.get_dense_embeddings(
-                texts=[query_dense],
-                model=dense_model
+                texts=[query_dense], model=dense_model
             )
-            sparse_task = self.api_client.get_sparse_embeddings(
-                texts=[query],
-                model=sparse_model
-            )
+            sparse_task = self.api_client.get_sparse_embeddings(texts=[query], model=sparse_model)
             dense_resp, sparse_resp = await asyncio.gather(dense_task, sparse_task)
 
             end_time = time.perf_counter() - start_embed
-            logger.info(f"Duration generate embedding & sparse: {end_time*1000:.1f}ms")
+            logger.info(f"Duration generate embedding & sparse: {end_time * 1000:.1f}ms")
 
             logger.info("Start execute hybrid search...")
             start_query = time.perf_counter()
@@ -349,13 +344,9 @@ class QdrantVectoreStore:
                 models.Prefetch(
                     query=np.array(dense_embedding, dtype=np.float32),
                     using=self.DENSE_VECTOR_NAME,
-                    limit=top_k
+                    limit=top_k,
                 ),
-                models.Prefetch(
-                    query=sparse_vector,
-                    using=self.SPARSE_VECTOR_NAME,
-                    limit=top_k
-                )
+                models.Prefetch(query=sparse_vector, using=self.SPARSE_VECTOR_NAME, limit=top_k),
             ]
 
             # Execute hybrid search
@@ -369,11 +360,9 @@ class QdrantVectoreStore:
                     hnsw_ef=8,
                     exact=False,
                     quantization=models.QuantizationSearchParams(
-                        ignore=False,
-                        rescore=True,
-                        oversampling=2.0
-                    )
-                )
+                        ignore=False, rescore=True, oversampling=2.0
+                    ),
+                ),
             )
 
             documents = []
@@ -383,12 +372,12 @@ class QdrantVectoreStore:
                     "score": point.score,
                     "chunk_text": point.payload.get("chunk_text", ""),
                     "contextual_text": point.payload.get("contextual_text", ""),
-                    "metadata": point.payload.get("metadata", {})
+                    "metadata": point.payload.get("metadata", {}),
                 }
                 documents.append(doc)
-            
+
             search_duration = time.perf_counter() - start_query
-            logger.info(f"🔍 Retrieved {len(documents)} results in {search_duration*1000:.1f}ms")
+            logger.info(f"🔍 Retrieved {len(documents)} results in {search_duration * 1000:.1f}ms")
 
             # Reranking
             if use_reranking and len(documents) > 1:
@@ -401,7 +390,7 @@ class QdrantVectoreStore:
                             model=cohere_model,
                             query=query,
                             documents=[doc["chunk_text"] for doc in documents],
-                            top_n=rerank_top_k
+                            top_n=rerank_top_k,
                         )
 
                         reranked_docs = []
@@ -422,17 +411,17 @@ class QdrantVectoreStore:
                             query=query,
                             documents=[doc["chunk_text"] for doc in documents],
                             model=rerank_model,
-                            top_k=rerank_top_k
+                            top_k=rerank_top_k,
                         )
 
                         reranked_docs = []
                         for item in rerank_resp:
-                            original_doc = documents[item['index']].copy()
-                            original_doc["rerank_score"] = item['score']
+                            original_doc = documents[item["index"]].copy()
+                            original_doc["rerank_score"] = item["score"]
                             reranked_docs.append(original_doc)
 
                         documents = reranked_docs
-                    
+
                     except ServiceMaintenanceError:
                         raise
 
@@ -448,14 +437,15 @@ class QdrantVectoreStore:
             return documents
 
         except ServiceMaintenanceError:
-            raise 
+            raise
 
         except Exception as e:
             logger.error(f"Search failed: {e}")
             import traceback
+
             traceback.print_exc()
             return []
-    
+
     def _parse_dense_embedding(self, response: Any) -> list[float]:
         """
         Parse dense embedding response dari API
@@ -479,11 +469,11 @@ class QdrantVectoreStore:
                 return response[0]
         elif isinstance(response, dict):
             # Dict format with 'embedding' key
-            if 'embedding' in response:
-                return response['embedding']
+            if "embedding" in response:
+                return response["embedding"]
             # Dict format with 'data' key (OpenAI-style)
-            elif 'data' in response:
-                return response['data'][0]['embedding']
+            elif "data" in response:
+                return response["data"][0]["embedding"]
 
         logger.error(f"Unknown dense embedding format: {type(response)}")
         raise ValueError(f"Cannot parse dense embedding: {response}")
@@ -516,8 +506,8 @@ class QdrantVectoreStore:
             for item in response:
                 if isinstance(item, dict):
                     # Handle both "index" and "indices"
-                    idx = item.get('index') or item.get('indices')
-                    val = item.get('value') or item.get('values')
+                    idx = item.get("index") or item.get("indices")
+                    val = item.get("value") or item.get("values")
                     if idx is not None and val is not None:
                         indices.append(idx)
                         values.append(val)
@@ -527,8 +517,8 @@ class QdrantVectoreStore:
             if response[0]:  # Ensure the inner list is not empty
                 for item in response[0]:
                     if isinstance(item, dict):
-                        idx = item.get('index')
-                        val = item.get('value')
+                        idx = item.get("index")
+                        val = item.get("value")
                         if idx is not None and val is not None:
                             indices.append(idx)
                             values.append(val)
@@ -537,12 +527,12 @@ class QdrantVectoreStore:
             logger.warning("Empty sparse embedding, returning zeros")
             return {
                 "indices": np.array([0], dtype=np.int32),
-                "values": np.array([0.0], dtype=np.float32)
+                "values": np.array([0.0], dtype=np.float32),
             }
 
         return {
             "indices": np.array(indices, dtype=np.int32),
-            "values": np.array(values, dtype=np.float32)
+            "values": np.array(values, dtype=np.float32),
         }
 
     def _format_sparse_for_qdrant(self, sparse_dict: dict[str, np.ndarray]) -> models.SparseVector:
@@ -556,8 +546,7 @@ class QdrantVectoreStore:
             models.SparseVector object
         """
         return models.SparseVector(
-            indices=sparse_dict["indices"].tolist(),
-            values=sparse_dict["values"].tolist()
+            indices=sparse_dict["indices"].tolist(), values=sparse_dict["values"].tolist()
         )
 
     async def get_info_collection(self, collection_name: str) -> dict[str, Any]:
@@ -575,9 +564,7 @@ class QdrantVectoreStore:
             return {}
 
         try:
-            info_collection = await self.client.get_collection(
-                collection_name=collection_name
-            )
+            info_collection = await self.client.get_collection(collection_name=collection_name)
             return info_collection.model_dump()
         except Exception as e:
             logger.error(f"Error getting collection info: {e}")
@@ -633,7 +620,7 @@ _retriever_instance: QdrantVectoreStore | None = None
 def get_retriever_instance() -> QdrantVectoreStore:
     """
     Get singleton instance of QdrantVectoreStore
-    
+
     Returns:
         QdrantVectoreStore instance
     """

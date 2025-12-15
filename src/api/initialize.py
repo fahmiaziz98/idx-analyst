@@ -1,8 +1,8 @@
 from loguru import logger
 
 from src.core import settings
-from src.vector_db.vectorstore import get_retriever_instance
 from src.utils import filter_non_header_documents, load_data
+from src.vector_db.vectorstore import get_retriever_instance
 
 
 async def initialize_vector_store() -> bool:

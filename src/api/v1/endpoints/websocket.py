@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from src.core import settings
+from src.auth.jwt import verify_token
 from src.rag import agent_rag
 from src.services.websocket_manager import get_connection_manager
 
@@ -14,15 +14,20 @@ manager = get_connection_manager()
 @router.websocket("/chat")
 async def websocket_endpoint(
     websocket: WebSocket,
-    api_key: str | None = Query(None, alias="api_key"),
+    token: str | None = Query(None, alias="token"),
 ):
     """
     WebSocket endpoint for real-time chat interaction
     with the RAG Chatbot.
-    Clients must provide a valid API key as a query parameter.
+    Client must provide a valid JWT token as a query parameter.
     """
-    if not api_key or api_key not in settings.api_keys_list:
-        await websocket.close(code=1008)
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+
+    token_data = verify_token(token)
+    if not token_data:
+        await websocket.close(code=1008, reason="Invalid token")
         return
 
     client_id = f"{websocket.client.host}:{websocket.client.port}"

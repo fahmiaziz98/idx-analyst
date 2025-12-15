@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from loguru import logger
 
 from src.core import settings as config
+from src.rag.researcher_graph import graph as research_graph
 
 from .prompts import (
     GENERAL_SYSTEM_PROMPT,
@@ -14,7 +15,6 @@ from .prompts import (
     RESPONSE_SYSTEM_PROMPT,
     ROUTER_SYSTEM_PROMPT,
 )
-from src.rag.researcher_graph import graph as research_graph
 from .state import AgentState, InputState, Router
 from .utils import format_docs
 

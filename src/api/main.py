@@ -9,7 +9,7 @@ from src.api.logger import setup_logger
 from src.api.middleware import limiter, setup_middleware
 from src.api.v1.api import api_router
 from src.core import settings
-from src.models.schemas import ErrorResponse, HealthResponse
+from src.schemas.common import ErrorResponse
 
 logger = setup_logger()
 
@@ -70,7 +70,9 @@ async def global_handler(request, exc):
     logger.error(f"Global Error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content=ErrorResponse(error="Internal Server Error", detail=str(exc)).model_dump(),
+        content=ErrorResponse(error="Internal Server Error", detail=str(exc)).model_dump(
+            mode="json"
+        ),
     )
 
 
@@ -82,7 +84,23 @@ async def health(request: Request):
 
     Returns a simple JSON payload indicating the service status and version.
     """
-    return HealthResponse(status="healthy", version=settings.API_VERSION)
+    return {
+        "status": "healthy",
+        "api": "ok",
+        "redis": "ok",  # Mocked for now
+        "environment": settings.ENVIRONMENT,
+        "version": settings.API_VERSION,
+    }
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "name": settings.API_TITLE,
+        "version": settings.API_VERSION,
+        "docs": "/docs",
+    }
 
 
 app.include_router(api_router, prefix="/api/v1")

@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
-from src.api.dependencies import get_current_api_key
 from src.api.middleware import limiter
+from src.auth.dependency import get_current_user
 from src.core.exception import ServiceMaintenanceError
-from src.models.schemas import ChatRequest, ChatResponse, StreamChunk
+from src.database.models import User
+from src.schemas.chat import ChatRequest, ChatResponse, StreamChunk
 from src.services.chat_service import ChatService
 
 router = APIRouter()
@@ -19,7 +20,7 @@ async def chat(
     request: Request,
     response: Response,
     body: ChatRequest,
-    api_key: str = Depends(get_current_api_key),
+    user: User = Depends(get_current_user),
 ) -> ChatResponse:
     """
     Non-streaming chat endpoint.
@@ -73,7 +74,7 @@ async def chat_stream(
     request: Request,
     response: Response,
     body: ChatRequest,
-    api_key: str = Depends(get_current_api_key),
+    user: User = Depends(get_current_user),
 ) -> EventSourceResponse:
     """
     Streaming chat endpoint (Server-Sent Events).

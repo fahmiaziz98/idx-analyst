@@ -1,7 +1,6 @@
 from functools import lru_cache
 
-from loguru import logger
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,21 +19,32 @@ class Settings(BaseSettings):
     API_KEYS: str | None = None
 
     JWT_SECRET: str
-    JWT_ALGORITHM: str = "HS256"  
-    JWT_EXPIRATION_DAYS: int = 7  
-    
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_DAYS: int = 7
+
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
     OAUTH_REDIRECT_URI: str = "http://localhost:7860/auth/callback"
-    
-    ADMIN_EMAIL: str 
-    
+
+    ADMIN_EMAIL: str
+
     HOST: str = "0.0.0.0"
-    PORT: int = 7860 # | 8000
+    PORT: int = 7860  # | 8000
     WORKERS: int = 4
-    ALLOWED_ORIGINS: str = "*"
+    ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:8501",  # Streamlit default
+        "http://localhost:3000",  # React default (future)
+        "http://127.0.0.1:8501",
+    ]
 
     DATABASE_URL: str | None = None
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def assemble_db_connection(cls, v: str | None) -> str | None:
+        if isinstance(v, str) and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://")  # psycopg2
+        return v
 
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.5-flash-lite"
@@ -74,7 +84,7 @@ class Settings(BaseSettings):
     def jwt_expiration_seconds(self) -> int:
         """JWT expiration dalam seconds."""
         return self.JWT_EXPIRATION_DAYS * 24 * 60 * 60
-    
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -85,10 +95,6 @@ def get_settings() -> Settings:
         Settings singleton instance
     """
     settings_instance = Settings()
-
-    if settings_instance.is_development:
-        settings_instance.log_configuration()
-
     return settings_instance
 
 
