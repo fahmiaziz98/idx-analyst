@@ -26,7 +26,7 @@ class ChatService:
 
     async def process_chat(
         self,
-        messages: list[dict[str, Any]],
+        messages: str,
         conversation_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -34,7 +34,7 @@ class ChatService:
         Process a non-streaming chat request.
 
         Args:
-            messages: List of messages to process.
+            messages: str of messages to process.
             conversation_id: Optional conversation ID.
             metadata: Optional metadata.
 
@@ -46,10 +46,7 @@ class ChatService:
             result = await self.agent.ainvoke({"messages": messages})
             response_content = result["messages"][-1].content
 
-            logger.info(
-                f"Chat processed successfully. Conversation ID: {conversation_id}, "
-                f"Message count: {len(messages)}"
-            )
+            logger.info(f"Chat processed successfully. Conversation ID: {conversation_id}")
 
             return {
                 "response": response_content,
@@ -74,23 +71,20 @@ class ChatService:
             raise
 
     async def process_stream_chat(
-        self, messages: list[dict[str, Any]], conversation_id: str | None = None
+        self, messages: str, conversation_id: str | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Process a streaming chat request.
 
         Args:
-            messages: List of messages to process.
+            messages: str of messages to process.
             conversation_id: Optional conversation ID.
 
         Returns:
             Async generator yielding chat messages.
         """
         try:
-            logger.info(
-                f"Starting stream chat. Conversation ID: {conversation_id}, "
-                f"Message count: {len(messages)}"
-            )
+            logger.info(f"Starting stream chat. Conversation ID: {conversation_id}")
 
             async for msg, _ in self.agent.astream({"messages": messages}, stream_mode="messages"):
                 if msg.content:

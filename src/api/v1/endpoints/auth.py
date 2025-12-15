@@ -15,7 +15,7 @@ from src.services.auth_service import AuthService
 router = APIRouter()
 
 
-# login
+# ===== Login =====
 @router.get("/login")
 async def login(
     request: Request,
@@ -35,6 +35,7 @@ async def login(
     return await oauth.google.authorize_redirect(request, callback_uri)
 
 
+# ===== OAuth Callback =====
 @router.get("/callback")
 async def oauth_callback(
     request: Request,
@@ -68,8 +69,6 @@ async def oauth_callback(
 async def get_me(user: User = Depends(get_current_user)):
     """
     Get current authenticated user info.
-
-    Endpoint ini require valid JWT token di Authorization header.
 
     Headers:
         Authorization: Bearer <jwt_token>
@@ -108,13 +107,13 @@ async def logout(user: User = Depends(get_current_user)):
     """
     Logout user.
 
-    Note: JWT tokens adalah stateless, jadi tidak bisa di-"revoke" dari server.
-    Logout hanya perlu client-side delete token dari localStorage/cookie.
+    Note: JWT tokens are stateless, so they cannot be "revoked" from the server.
+    Logout only requires client-side deletion of the token from localStorage/cookie.
 
-    Endpoint ini optional, tapi berguna untuk:
-    - Update last_login timestamp
-    - Log logout event
-    - Clear server-side session (jika ada)
+    This endpoint is optional, but useful for:
+    - Updating last_login timestamp
+    - Logging logout events
+    - Clearing server-side sessions (if any)
 
     Returns:
         Success message
@@ -135,7 +134,7 @@ async def logout(user: User = Depends(get_current_user)):
 @router.get("/health")
 async def auth_health():
     """
-    Health check untuk authentication system.
+    Health check for authentication system.
 
     Check:
     - OAuth credentials configured
