@@ -1,12 +1,16 @@
+import secrets
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """
-    Application configuration.
+    Security-focused settings with validation and environment-aware defaults.
+
+    CRITICAL: All secrets must be at least 32 characters and cryptographically secure.
     """
 
     API_TITLE: str = "IDX-Analyst RAG API"
@@ -14,19 +18,41 @@ class Settings(BaseSettings):
     API_DESCRIPTION: str = "MVP RAG system for Indonesian financial reports"
     ENVIRONMENT: str = Field(default="development", pattern="^(development|staging|production)$")
 
-    API_KEYS_ENCRYPTED: str | None = None
-    ENCRYPTION_KEY: str | None = None
-    API_KEYS: str | None = None
+    ENVIRONMENT: Literal["development", "staging", "production"] = Field(
+        default="development", description="Application environment"
+    )
 
-    JWT_SECRET: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_DAYS: int = 7
+    # JWT Settings
+    JWT_SECRET: str = Field(
+        ..., min_length=32, description="Secret key for JWT token signing (min 32 chars)"
+    )
+    JWT_REFRESH_SECRET: str = Field(
+        ..., min_length=32, description="Separate secret for refresh tokens (min 32 chars)"
+    )
+    JWT_ALGORITHM: str = Field(default="HS256")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15)  # Short-lived access tokens
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=30)
 
+    # Session Settings
+    SESSION_SECRET: str = Field(
+        ..., min_length=32, description="Secret key for session middleware (min 32 chars)"
+    )
+    SESSION_MAX_AGE: int = Field(default=86400)  # 24 hours
+
+    # CSRF Protection
+    CSRF_SECRET: str = Field(
+        ..., min_length=32, description="Secret key for CSRF tokens (min 32 chars)"
+    )
+
+    # OAuth Settings
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
+    OAUTH_STATE_EXPIRE_MINUTES: int = Field(default=10)
 
+    # Email Settings
     ADMIN_EMAIL: str
 
+    # Server Settings
     HOST: str = "0.0.0.0"
     PORT: int = 7860  # | 8000
     WORKERS: int = 4
@@ -35,15 +61,40 @@ class Settings(BaseSettings):
         "http://localhost:3000",  # React default (future)
         "http://127.0.0.1:8501",
     ]
-
+    # Database Settings
     DATABASE_URL: str | None = None
 
-    @field_validator("DATABASE_URL")
-    @classmethod
-    def assemble_db_connection(cls, v: str | None) -> str | None:
-        if isinstance(v, str) and v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://")  # psycopg2
-        return v
+    # Cookie Settings
+    COOKIE_DOMAIN: str | None = Field(default=None, description="Cookie domain for token storage")
+    COOKIE_SECURE: bool | None = Field(
+        default=None, description="Require HTTPS for cookies (auto-set based on environment)"
+    )
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = Field(default="lax")
+
+    # Redis Settings (for token blacklist)
+    REDIS_TOKEN: str | None = None
+    REDIS_URL: str = Field(
+        default="redis://localhost:6379/0", description="Redis URL for token blacklist and caching"
+    )
+    REDIS_MAX_CONNECTIONS: int = Field(default=10)
+
+    # Allowed Redirect Domains
+    ALLOWED_REDIRECT_DOMAINS: list[str] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1"],
+        description="Whitelist of allowed redirect domains for OAuth",
+    )
+
+    # Frontend URL
+    FRONTEND_URL: str = Field(
+        default="http://localhost:8501", description="Frontend application URL"
+    )
+
+    # Security Headers
+    ENABLE_SECURITY_HEADERS: bool = Field(default=True)
+    HSTS_MAX_AGE: int = Field(default=31536000)  # 1 year
+
+    # Rate Limiting
+    RATE_LIMIT_USER: str = Field(default="100/minute")
 
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.5-flash-lite"
@@ -68,10 +119,6 @@ class Settings(BaseSettings):
     QDRANT_BASE_URL: str
     COLLECTION: str = "document"
 
-    ENABLE_METRICS: bool = True
-    ENABLE_HEALTH_CHECKS: bool = True
-    LOG_LEVEL: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -79,23 +126,135 @@ class Settings(BaseSettings):
         extra="allow",
     )
 
+    @field_validator("JWT_SECRET", "JWT_REFRESH_SECRET", "SESSION_SECRET", "CSRF_SECRET")
+    @classmethod
+    def validate_secret_strength(cls, v: str, info) -> str:
+        """Validate that secrets are strong and not default values"""
+        field_name = info.field_name
+
+        # Check minimum length
+        if len(v) < 32:
+            raise ValueError(f"{field_name} must be at least 32 characters long")
+
+        # Check for weak/default values
+        weak_secrets = [
+            "changeme",
+            "secret",
+            "default",
+            "password",
+            "12345678901234567890123456789012",  # Sequential numbers
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # Repeated characters
+        ]
+
+        if v.lower() in weak_secrets:
+            raise ValueError(
+                f"{field_name} cannot be a weak or default value. "
+                f"Generate a secure secret using: python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+            )
+
+        # Warn if entropy seems low (all same character repeated)
+        if len(set(v)) < 8:
+            raise ValueError(
+                f"{field_name} appears to have low entropy (too many repeated characters)"
+            )
+
+        return v
+
+    @model_validator(mode="after")
+    def validate_unique_secrets(self) -> "SecuritySettings":
+        """Ensure all secrets are unique"""
+        secrets_map = {
+            "JWT_SECRET": self.JWT_SECRET,
+            "JWT_REFRESH_SECRET": self.JWT_REFRESH_SECRET,
+            "SESSION_SECRET": self.SESSION_SECRET,
+            "CSRF_SECRET": self.CSRF_SECRET,
+        }
+
+        # Check for duplicate secrets
+        seen = {}
+        for name, value in secrets_map.items():
+            if value in seen.values():
+                raise ValueError(
+                    f"{name} must be different from other secrets. "
+                    "Each security component requires a unique secret key."
+                )
+            seen[name] = value
+
+        return self
+
+    @model_validator(mode="after")
+    def set_environment_defaults(self) -> "SecuritySettings":
+        """Set secure defaults based on environment"""
+        if self.ENVIRONMENT == "production":
+            # Force secure settings in production
+            if self.COOKIE_SECURE is None:
+                self.COOKIE_SECURE = True
+
+            if not self.FRONTEND_URL.startswith("https://"):
+                raise ValueError("FRONTEND_URL must use HTTPS in production environment")
+
+            if (
+                "localhost" in self.ALLOWED_REDIRECT_DOMAINS
+                or "127.0.0.1" in self.ALLOWED_REDIRECT_DOMAINS
+            ):
+                raise ValueError(
+                    "localhost/127.0.0.1 cannot be in ALLOWED_REDIRECT_DOMAINS in production"
+                )
+        else:
+            # Development defaults
+            if self.COOKIE_SECURE is None:
+                self.COOKIE_SECURE = False
+
+        return self
+
     @property
-    def jwt_expiration_seconds(self) -> int:
-        """JWT expiration dalam seconds."""
-        return self.JWT_EXPIRATION_DAYS * 24 * 60 * 60
+    def is_production(self) -> bool:
+        """Check if running in production"""
+        return self.ENVIRONMENT == "production"
+
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development"""
+        return self.ENVIRONMENT == "development"
+
+    @property
+    def jwt_access_token_expire_seconds(self) -> int:
+        """Get JWT access token expiration in seconds"""
+        return self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+    @property
+    def jwt_refresh_token_expire_seconds(self) -> int:
+        """Get JWT refresh token expiration in seconds"""
+        return self.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+
+    @staticmethod
+    def generate_secret(length: int = 64) -> str:
+        """
+        Generate a cryptographically secure secret key.
+
+        Args:
+            length: Length of the secret (default: 64)
+
+        Returns:
+            URL-safe base64-encoded secret string
+
+        Example:
+            >>> SecuritySettings.generate_secret()
+            'xvJm2kL...'  # 64+ character secure string
+        """
+        return secrets.token_urlsafe(length)
 
 
 @lru_cache
-def get_settings() -> Settings:
+def get_security_settings() -> SecuritySettings:
     """
-    Get cached settings instance.
+    Get cached security settings instance.
 
     Returns:
-        Settings singleton instance
+        SecuritySettings singleton instance
     """
-    settings_instance = Settings()
-    return settings_instance
+    return SecuritySettings()
 
 
-# Global settings instance
-settings = get_settings()
+# Export for convenience
+settings = get_security_settings()

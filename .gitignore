@@ -8,6 +8,8 @@ __pycache__/
 
 bacaan.md
 migrations/
+generate_secret.py
+.env.production
 
 # Distribution / packaging
 .Python
