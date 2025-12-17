@@ -1,4 +1,5 @@
-import traceback
+import secrets
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
@@ -6,7 +7,9 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependency import get_current_user
+from src.auth.jwt import create_token_pair, get_token_remaining_seconds
 from src.auth.oauth import oauth
+from src.auth.token_blacklist import TokenBlacklist, get_token_blacklist
 from src.core.config import settings
 from src.database.models import User
 from src.database.session import get_db
@@ -15,49 +18,211 @@ from src.services.auth_service import AuthService
 router = APIRouter()
 
 
+def validate_redirect_url(url: str):
+    """
+    Validate redirect URL against whitelist.
+
+    Security checks:
+    1. URL must use HTTPS in production
+    2. Domain must be in ALLOWED_REDIRECT_DOMAINS
+    3. No open redirect vulnerability
+
+    Args:
+        url: Redirect URL to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not url:
+        return True
+
+    try:
+        parsed = urlparse(url)
+
+        # Check if URL uses HTTPS in production
+        if settings.is_production and parsed.scheme != "https":
+            logger.warning(f"Invalid redirect URL scheme in production: {parsed.scheme}")
+            return False
+
+        if parsed.scheme not in ("http", "https"):
+            logger.warning(f"Invalid redirect URL scheme: {parsed.scheme}")
+            return False
+
+        # Extract domain (remove port if present)
+        domain = parsed.netloc.split(":")[0] if parsed.netloc else ""
+
+        # Check against whitelist
+        if domain not in settings.ALLOWED_REDIRECT_DOMAINS:
+            logger.warning(f"Redirect domain not in whitelist: {domain}")
+            return False
+
+        return True
+    except ValueError:
+        logger.warning(f"Invalid redirect URL: {url}")
+        return False
+
+
+def generate_state_token() -> str:
+    """
+    Generate cryptographically secure state token for CSRF protection.
+
+    Returns:
+        State token
+    """
+    return secrets.token_urlsafe(32)
+
+
 # ===== Login =====
 @router.get("/login")
 async def login(
     request: Request,
-    redirect_url: str | None = Query(None, description="URL redirect after login"),
+    redirect_url: str | None = Query(
+        None,
+        description="URL redirect after login",
+        max_length=500,
+    ),
 ):
     """
-    Initiate Google Oauth login flow
+    Initiate Google OAuth login flow with CSRF protection.
 
     Flow:
-    - Generate Google authorization URL
-    - Redirect user to google consent screen
+    1. Validate redirect URL against whitelist
+    2. Generate state parameter for CSRF protection
+    3. Store state and redirect URL in session
+    4. Redirect user to Google consent screen
 
-    Query params:
-        redirect_url: Optional url redirect after successfully login
+    Query Parameters:
+        redirect_url: Optional URL to redirect after login (must be whitelisted)
+
+    Returns:
+        Redirect to Google OAuth consent page
+
+    Raises:
+        HTTPException 400: If redirect URL is invalid
+
+    Example:
+        GET /auth/login?redirect_url=https://app.example.com/dashboard
     """
+
+    # Validate redirect URL against whitelist
+    if redirect_url and not validate_redirect_url(redirect_url):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid redirect URL",
+        )
+
+    # Generate state parameter for CSRF protection
+    # Store state and redirect URL in session
+    state = generate_state_token()
+    request.session["oauth_state"] = state
+    request.session["redirect_url"] = redirect_url or settings.FRONTEND_URL
+
+    # Redirect user to Google consent screen
     callback_uri = str(request.url_for("oauth_callback"))
-    return await oauth.google.authorize_redirect(request, callback_uri)
+    return await oauth.google.authorize_redirect(
+        request,
+        callback_uri,
+        state=state,
+    )
 
 
 # ===== OAuth Callback =====
 @router.get("/callback")
 async def oauth_callback(
     request: Request,
+    state: str = Query(..., description="State parameter from google"),
     code: str = Query(..., description="Authorization code from google"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Handle OAuth callback from Google
-    
-    Delegates to AuthService.
+    Handle OAuth callback from Google with security validations.
+
+    Security Flow:
+    1. Verify state parameter matches (CSRF protection)
+    2. Exchange authorization code for access token
+    3. Get user info from Google
+    4. Create or update user in database
+    5. Generate JWT tokens
+    6. Set secure HTTP-only cookies
+    7. Redirect to original destination
+
+    Query Parameters:
+        state: CSRF token (must match session)
+        code: Authorization code from Google
+
+    Returns:
+        Redirect to frontend with secure cookies set
+
+    Raises:
+        HTTPException 400: Invalid state parameter (CSRF attempt)
+        HTTPException 500: Authentication failed
+
+    Example:
+        GET /auth/callback?state=abc123&code=xyz789
     """
     try:
+        # 1. Verify state parameter matches (CSRF protection)
+        stored_state = request.session.get("oauth_state")
+        if not stored_state or state != stored_state:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid state parameter",
+            )
+
+        # 2. Clear state parameter from session
+        request.session.pop("oauth_state", None)
+
+        # 3. Handle Oauth callback via auth service
         auth_service = AuthService(db)
-        redirect_url = await auth_service.handle_google_callback(request)
-        return RedirectResponse(url=redirect_url)
+        user = await auth_service.handle_google_callback(request)
+
+        # 4. Generate JWT tokens
+        token = create_token_pair(
+            user_id=user.id,
+            role=user.role.value,
+            email=user.email,
+        )
+
+        # 5. Get redirect url from session
+        redirect_url = request.session.pop("redirect_url", settings.FRONTEND_URL)
+
+        # 6. Set secure HTTP-only cookies
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+
+        # Set access token cookie (HTTP-only, secure in production)
+        response.set_cookie(
+            key="access_token",
+            value=token.access_token,
+            httponly=True,  # Prevent JavaScript access
+            secure=settings.COOKIE_SECURE,  # HTTPS only in production
+            samesite=settings.COOKIE_SAMESITE,  # CSRF protection
+            # domain=security_settings.COOKIE_DOMAIN,
+            max_age=token.expires_in,
+            path="/",
+        )
+
+        # Set refresh token cookie (HTTP-only, secure in production)
+        response.set_cookie(
+            key="refresh_token",
+            value=token.refresh_token,
+            httponly=True,
+            secure=settings.COOKIE_SECURE,
+            samesite=settings.COOKIE_SAMESITE,
+            # domain=security_settings.COOKIE_DOMAIN,
+            max_age=token.expires_in,
+            path="/api/v1/auth",  # Restrict to auth endpoints only
+        )
+
+        logger.success(f"User {user.email} logged in successfully")
+
+        return response
 
     except HTTPException:
         raise
+
     except Exception as e:
         logger.error(f"OAuth callback error: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication failed: {str(e)}",
@@ -75,20 +240,6 @@ async def get_me(user: User = Depends(get_current_user)):
 
     Returns:
         User info (email, name, role, etc)
-
-    Example:
-        GET /auth/me
-        Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-        Response:
-        {
-            "id": "user-123",
-            "email": "user@example.com",
-            "name": "John Doe",
-            "role": "user",
-            "avatar_url": "https://...",
-            "last_login": "2024-01-01T10:00:00"
-        }
     """
     return {
         "id": user.id,
@@ -103,28 +254,92 @@ async def get_me(user: User = Depends(get_current_user)):
 
 # ===== Logout =====
 @router.post("/logout")
-async def logout(user: User = Depends(get_current_user)):
+async def logout(
+    request: Request,
+    user: User = Depends(get_current_user),
+    blacklist: TokenBlacklist = Depends(get_token_blacklist),
+):
     """
-    Logout user.
+    Logout user and revoke tokens.
 
-    Note: JWT tokens are stateless, so they cannot be "revoked" from the server.
-    Logout only requires client-side deletion of the token from localStorage/cookie.
+    Flow:
+    1. Extract tokens from cookies
+    2. Add tokens to blacklist
+    3. Clear cookies
+    4. Return success response
 
-    This endpoint is optional, but useful for:
-    - Updating last_login timestamp
-    - Logging logout events
-    - Clearing server-side sessions (if any)
+    Headers/Cookies:
+        Authorization: Bearer <token> OR Cookie: access_token=<token>
+        Cookie: refresh_token=<token>
 
     Returns:
         Success message
 
     Example:
         POST /auth/logout
-        Authorization: Bearer <token>
-
-        Response:
-        {
-            "message": "Logged out successfully"
-        }
+        Cookie: access_token=...; refresh_token=...
     """
-    return {"message": "Logged out successfully", "email": user.email}
+    access_token = request.cookies.get("access_token")
+    refresh_token = request.cookies.get("refresh_token")
+
+    # Revoke access token if present
+    if access_token:
+        remaining = get_token_remaining_seconds(access_token)
+        if remaining:
+            await blacklist.revoke_token(access_token, remaining)
+            logger.info(f"Access token revoked for user {user.email}")
+        else:
+            logger.info(f"Access token expired for user {user.email}")
+
+    # Revoke refresh token if present
+    if refresh_token:
+        remaining = get_token_remaining_seconds(refresh_token)
+        if remaining:
+            await blacklist.revoke_token(refresh_token, remaining)
+            logger.info(f"Refresh token revoked for user {user.email}")
+        else:
+            logger.info(f"Refresh token expired for user {user.email}")
+
+    response = RedirectResponse(url=settings.FRONTEND_URL, status_code=status.HTTP_302_FOUND)
+
+    # Clear cookies
+    response.delete_cookie(
+        key="access_token",
+        # domain=settings.COOKIE_DOMAIN,
+        path="/",
+    )
+
+    response.delete_cookie(
+        key="refresh_token",
+        # domain=settings.COOKIE_DOMAIN,
+        path="/api/v1/auth",
+    )
+
+    logger.success(f"User {user.email} logged out successfully")
+
+    return response
+
+
+@router.post("/revoke-all")
+async def revoke_all_tokens(
+    user: User = Depends(get_current_user),
+    blacklist: TokenBlacklist = Depends(get_token_blacklist),
+):
+    """
+    Revoke all tokens for current user (security feature).
+
+    Use cases:
+    - Password reset
+    - Account compromise
+    - Logout from all devices
+
+    Returns:
+        Success message
+    """
+    await blacklist.revoke_all_user_tokens(
+        user_id=user.id, expiry_seconds=settings.jwt_refresh_token_expire_seconds
+    )
+
+    logger.warning(f"All tokens revoked for user {user.email}")
+
+    return {"message": "All tokens revoked successfully", "user_id": user.id}

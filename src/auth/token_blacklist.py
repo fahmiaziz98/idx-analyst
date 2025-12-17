@@ -31,13 +31,13 @@ class TokenBlacklist:
         self.redis = redis_client
         self._prefix = "blacklist:token:"
 
-    async def revoke_token(self, token: str, expiry_seconds: int = 900):
+    async def revoke_token(self, token: str, expiry_seconds: int):
         """
         Revoke a token by adding it to the blacklist with an expiration time.
 
         Args:
             token (str): The token to revoke.
-            expiry_seconds (int): Expiration time in seconds (default: 900).
+            expiry_seconds (int): Expiration time in seconds 
         """
         try:
             key = f"{self._prefix}{token}"

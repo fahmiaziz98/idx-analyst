@@ -2,6 +2,7 @@
 from fastapi import HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.auth.jwt import create_access_token
 from src.auth.oauth import get_user_info, is_admin_email, oauth
 from src.database.models import UserRole
@@ -70,8 +71,7 @@ class AuthService:
             )
 
             # 5. Construct Redirect URL
-            frontend_url = "http://localhost:8501"
-            return f"{frontend_url}?token={jwt_token}"
+            return f"{settings.FRONTEND_URL}?token={jwt_token}"
 
         except HTTPException:
             raise
