@@ -27,3 +27,10 @@ class EmbeddingServiceError(Exception):
         self.message = message
         self.original_error = original_error
         super().__init__(self.message)
+
+
+class TokenBlacklistError(Exception):
+    """Custom exception for token blacklist errors."""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)

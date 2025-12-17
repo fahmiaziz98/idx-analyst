@@ -1,5 +1,4 @@
 from authlib.integrations.starlette_client import OAuth
-from loguru import logger
 
 from src.core.config import settings
 
@@ -28,7 +27,7 @@ async def get_user_info(token: dict) -> dict | None:
     - sub: Google user ID (unique identifier)
 
     Args:
-        token: Token response 
+        token: Token response
 
     Returns:
         User info (dict) or None if error
