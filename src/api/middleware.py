@@ -38,7 +38,18 @@ class SecurityHeadersMiddleware:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Content-Security-Policy"] = "default-src 'self'"
+
+        # Relaxed CSP for Swagger UI compatibility
+        # Allow 'unsafe-inline' for styles/scripts and cdn.jsdelivr.net which FastAPI uses by default
+        csp_policy = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "connect-src 'self'"
+        )
+        response.headers["Content-Security-Policy"] = csp_policy
+        
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
 

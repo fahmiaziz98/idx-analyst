@@ -62,7 +62,8 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Verifying database connection...")
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            from sqlalchemy import text
+            await conn.execute(text("SELECT 1"))
         logger.success("✅ Database connected")
     except Exception as e:
         logger.error(f"❌ Database connection failed: {e}")
@@ -105,9 +106,9 @@ app = FastAPI(
     version=settings.API_VERSION,
     description=settings.API_DESCRIPTION,
     lifespan=lifespan,
-    docs_url="/docs" if not settings.is_production else None,
-    redoc_url="/redoc" if not settings.is_production else None,
-    openapi_url="/openapi.json" if not settings.is_production else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
 # Setup middleware
@@ -199,8 +200,9 @@ async def health_check():
 
     # Check Database
     try:
+        from sqlalchemy import text
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         checks["database"] = "healthy"
     except Exception as e:
         logger.error(f"Database health check failed: {e}")

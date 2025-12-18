@@ -7,8 +7,8 @@ from src.core import settings
 engine = create_async_engine(
     url=settings.DATABASE_URL,
     echo=False,  # set false in production
-    pool_size=5,  # adjust based on your needs
-    max_overflow=10,  # adjust based on your needs
+    pool_size=20,  # adjust based on your needs
+    max_overflow=40,  # adjust based on your needs
     pool_pre_ping=True,  # to check if connections are alive
     pool_timeout=60,
     pool_recycle=3600,
