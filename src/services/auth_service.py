@@ -17,7 +17,7 @@ class AuthService:
     async def handle_google_callback(self, request: Request) -> User:  # Changed return type
         """
         Handle the full Google OAuth callback flow.
-        
+
         Returns:
             User: The authenticated user object
         """
@@ -54,7 +54,7 @@ class AuthService:
                     email=email, name=name, avatar_url=avatar_url, role=role
                 )
 
-            return user  
+            return user
 
         except HTTPException:
             raise
