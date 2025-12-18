@@ -34,70 +34,65 @@ async def lifespan(app: FastAPI):
     - Cleanup resources
     """
     # ===== STARTUP =====
-    logger.info("=" * 80)
+    logger.info("=" * 50)
     logger.info(f"🚀 Starting {settings.API_TITLE} v{settings.API_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Debug Mode: {not settings.is_production}")
-    logger.info("=" * 80)
+    logger.info("=" * 50)
 
-    # Initialize VectorDB
     logger.info("Initializing VectorDB...")
     init_success = await initialize_vector_store()
     if not init_success:
         logger.critical("Vector DB Init Failed!")
         raise Exception("Vector DB Init Failed!")
 
-    # Connect to redis
     try:
         logger.info("Connecting to Redis...")
         redis_client = await get_redis_connection()
         await redis_client.ping()
-        logger.info("✅ Redis connected")
+        logger.info("Redis connected")
     except Exception as e:
-        logger.error(f"❌ Redis connection failed: {e}")
+        logger.error(f"Redis connection failed: {e}")
         if settings.is_production:
             raise RuntimeError("Redis connection failed") from e
 
-    # Verify Database Connection
     try:
         logger.info("Verifying database connection...")
         async with engine.begin() as conn:
             from sqlalchemy import text
             await conn.execute(text("SELECT 1"))
-        logger.success("✅ Database connected")
+        logger.success("Database connected")
     except Exception as e:
-        logger.error(f"❌ Database connection failed: {e}")
+        logger.error(f"Database connection failed: {e}")
         if settings.is_production:
             raise RuntimeError("Database connection failed") from e
 
-    logger.info("=" * 80)
+    logger.info("=" * 50)
     logger.success("🎉 Application startup complete")
-    logger.info("=" * 80)
+    logger.info("=" * 50)
 
     yield
 
     # ===== SHUTDOWN =====
-    logger.info("=" * 80)
+    logger.info("=" * 50)
     logger.info("🛑 Shutting down application...")
-    logger.info("=" * 80)
+    logger.info("=" * 50)
 
-    # Close Redis connections
     try:
         await shutdown_redis()
-        logger.success("✅ Redis connections closed")
+        logger.success("Redis connections closed")
     except Exception as e:
-        logger.error(f"❌ Error closing Redis: {e}")
+        logger.error(f"Error closing Redis: {e}")
 
-    # Close Database connections
     try:
         await engine.dispose()
-        logger.success("✅ Database connections closed")
+        logger.success("Database connections closed")
     except Exception as e:
-        logger.error(f"❌ Error closing Database: {e}")
+        logger.error(f"Error closing Database: {e}")
 
-    logger.info("=" * 80)
+    logger.info("=" * 50)
     logger.success("👋 Application shutdown complete")
-    logger.info("=" * 80)
+    logger.info("=" * 50)
 
 
 # Create FastAPI application

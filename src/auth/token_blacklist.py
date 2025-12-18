@@ -52,6 +52,23 @@ class TokenBlacklist:
             logger.error(f"Failed to revoke token: {e}")
             raise TokenBlacklistError("Failed to revoke token") from e
 
+    async def is_revoked(self, token: str) -> bool:
+        """
+        Check if a token is revoked.
+
+        Args:
+            token (str): The token to check.
+
+        Returns:
+            bool: True if the token is revoked, False otherwise.
+        """
+        try:
+            key = f"{self._prefix}{token}"
+            return await self.redis.exists(key)
+        except RedisError as e:
+            logger.error(f"Failed to check token revocation: {e}")
+            raise TokenBlacklistError("Failed to check token revocation") from e
+    
     async def revoke_all_user_tokens(self, user_id: str, expiry_seconds: int = 3600) -> int:
         """
         Revoke all tokens for a specific user (e.g., password reset, account compromise).
@@ -164,7 +181,7 @@ class RedisConnection:
             logger.success("Redis connection closed")
 
         if self.pool:
-            self.pool.disconnect()
+            await self.pool.disconnect()
             self.pool = None
             logger.success("Redis pool closed")
 

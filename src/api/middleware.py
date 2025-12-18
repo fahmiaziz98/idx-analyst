@@ -46,7 +46,7 @@ class SecurityHeadersMiddleware:
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "img-src 'self' data: https://fastapi.tiangolo.com; "
-            "connect-src 'self'"
+            "connect-src 'self' https://accounts.google.com"
         )
         response.headers["Content-Security-Policy"] = csp_policy
         
