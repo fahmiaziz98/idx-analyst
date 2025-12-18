@@ -1,5 +1,3 @@
-# src/services/auth_service.py - Fix return type and logic
-
 from fastapi import HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,14 +7,19 @@ from src.repositories.user_repository import UserRepository
 
 
 class AuthService:
-    """Service layer for Authentication business logic."""
+    """
+    Service layer for Authentication business logic.
+    """
 
     def __init__(self, db: AsyncSession):
         self.user_repo = UserRepository(db)
 
-    async def handle_google_callback(self, request: Request) -> User:  # Changed return type
+    async def handle_google_callback(self, request: Request) -> User:
         """
         Handle the full Google OAuth callback flow.
+
+        Args:
+            request (Request): The incoming HTTP request
 
         Returns:
             User: The authenticated user object
@@ -26,15 +29,13 @@ class AuthService:
             token = await oauth.google.authorize_access_token(request)
 
             # 2. Get User Info
-            user_info = await get_user_info(token)
-            if not user_info:
+            if not (user_info := await get_user_info(token)):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Failed to get user info from Google",
                 )
 
-            email = user_info.get("email")
-            if not email:
+            if not (email := user_info.get("email")):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Email not provided by Google",
