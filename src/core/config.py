@@ -239,21 +239,21 @@ class Settings(BaseSettings):
             URL-safe base64-encoded secret string
 
         Example:
-            >>> SecuritySettings.generate_secret()
+            >>> Settings.generate_secret()
             'xvJm2kL...'  # 64+ character secure string
         """
         return secrets.token_urlsafe(length)
 
 
 @lru_cache
-def get_security_settings() -> SecuritySettings:
+def get_security_settings() -> Settings:
     """
     Get cached security settings instance.
 
     Returns:
         SecuritySettings singleton instance
     """
-    return SecuritySettings()
+    return Settings()
 
 
 # Export for convenience

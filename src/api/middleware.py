@@ -1,34 +1,79 @@
 import time
+from collections.abc import Callable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.core import settings
 
 limiter = Limiter(key_func=get_remote_address)
 
 
+class SecurityHeadersMiddleware:
+    """
+    Add security headers to all responses.
+
+    Headers added:
+    - X-Frame-Options: Prevent clickjacking
+    - X-Content-Type-Options: Prevent MIME sniffing
+    - X-XSS-Protection: Enable XSS filter
+    - Strict-Transport-Security (HSTS): Force HTTPS (production only)
+    - Content-Security-Policy: Restrict resource loading
+    - Referrer-Policy: Control referrer information
+    - Permissions-Policy: Control browser features
+    """
+
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    async def __call__(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
+
+        #  HSTS (production only)
+        if settings.is_production:
+            response.headers["Strict-Transport-Security"] = (
+                f"max-age={settings.HSTS_MAX_AGE}; includeSubDomains; preload"
+            )
+
+        return response
+
+
 class MetricsMiddleware:
     """
-    Simple middleware that logs request latency and adds a custom header.
+    Request latency logging and metrics middleware.
 
-    The middleware records the time taken to process each HTTP request,
-    logs the method, path, status code, and latency, and injects an
-    ``X-Process-Time`` header into the response.  It can be extended to
-    export metrics to Prometheus or another monitoring system.
+    Logs:
+    - Request method and path
+    - Response status code
+    - Processing time
+    - Client IP address
     """
 
-    async def __call__(self, request: Request, call_next):
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    async def __call__(self, request: Request, call_next: Callable) -> Response:
         start_time = time.time()
+        client_ip = request.client.host if request.client else "unknown"
 
         try:
             response = await call_next(request)
         except Exception as e:
-            raise e
+            logger.error(f"Request failed for {client_ip}: {e}")
+            raise
 
         process_time = time.time() - start_time
 
@@ -36,41 +81,133 @@ class MetricsMiddleware:
             f"{request.method} {request.url.path} "
             f"| Status: {response.status_code} "
             f"| Latency: {process_time:.4f}s"
+            f"| Client IP: {client_ip}"
         )
 
-        response.headers["X-Process-Time"] = str(process_time)
+        # Add custom headers
+        response.headers["X-Process-Time"] = f"{process_time:.4f}"
+        response.headers["X-Request-ID"] = request.headers.get("X-Request-ID", "not-set")
+
         return response
+
+
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """
+    Custom handler for rate limit exceeded errors.
+
+    Returns user-friendly JSON response with retry information.
+    """
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests. Please try again later.",
+            "detail": str(exc.detail),
+            "retry_after": "60 seconds",
+        },
+        headers={"Retry-After": "60"},
+    )
 
 
 def setup_middleware(app: FastAPI):
     """
-    Register CORS, rate‑limiting, and metrics middleware on the FastAPI app.
+    Configure all middleware for the FastAPI application.
 
-    Parameters
+    Middleware order (applied bottom-to-top):
+    1. Trusted Host (production only)
+    2. CORS
+    3. Session
+    4. Security Headers
+    5. Metrics/Logging
+    6. Rate Limiting
 
-    app : FastAPI
-        The FastAPI application instance to configure.
-
-    The function adds:
-    * CORS middleware with origins from ``settings.allowed_origins_list``.
-    * The custom ``MetricsMiddleware`` for latency logging.
-    * SlowAPI rate‑limiting middleware and its exception handler.
+    Args:
+        app: FastAPI application instance
     """
+
+    # Trusted Host (production only)
+    if settings.is_production:
+        allowed_hosts = []
+
+        # Extract domain from allowed redirect domain
+        for domain in settings.ALLOWED_REDIRECT_DOMAINS:
+            allowed_hosts.append(domain)
+            allowed_hosts.append(f"*.{domain}")  # allow sub domain
+
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+        logger.info(f"Trusted Host Middleware enabled: {allowed_hosts}")
+
+    # 2. CORS Middleware
+    # In production, this should be more restrictive
+    cors_origins = settings.ALLOWED_REDIRECT_DOMAINS if settings.is_production else ["*"]
+
+    # Convert domain list to full URLs for CORS
+    if settings.is_production:
+        cors_origins = [f"https://{domain}" for domain in cors_origins]
+    else:
+        cors_origins = [
+            "http://localhost:8501",
+            "http://localhost:3000",
+            "http://127.0.0.1:8501",
+            "http://127.0.0.1:3000",
+        ]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS,
+        allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
+        expose_headers=["X-Process-Time", "X-Request-ID"],
+        max_age=3600 if settings.is_production else 0,
     )
+    logger.info(f"CORS Middleware configured: {cors_origins}")
 
-    app.middleware("http")(MetricsMiddleware())
+    # 3. Session Middleware
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.SESSION_SECRET,
+        max_age=settings.SESSION_MAX_AGE,
+        same_site=settings.COOKIE_SAMESITE,
+        https_only=settings.COOKIE_SECURE,
+    )
+    logger.info("Session Middleware configured")
 
+    # 4. Security Headers Middleware
+    if settings.ENABLE_SECURITY_HEADERS:
+        app.middleware("http")(SecurityHeadersMiddleware(app))
+        logger.info("Security Headers Middleware enabled")
+
+    # 5. Metrics Middleware
+    app.middleware("http")(MetricsMiddleware(app))
+    logger.info("Metrics Middleware enabled")
+
+    # 6. Rate Limiting
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    logger.info("Rate Limiting configured")
 
-    from starlette.middleware.sessions import SessionMiddleware
+    logger.success("All middleware configured successfully")
 
-    app.add_middleware(SessionMiddleware, secret_key=settings.JWT_SECRET)
 
-    logger.info("Middlewares (CORS, SlowAPI, Metrics, Session) configured.")
+def setup_csrf_protection(app: FastAPI):
+    """
+    Set up CSRF protection for state-changing operations.
+    
+    Note: This is optional and depends on your frontend implementation.
+    For API-only applications with JWT in cookies, additional CSRF protection
+    is recommended for state-changing operations (POST, PUT, DELETE).
+    
+    Args:
+        app: FastAPI application instance
+    """
+    # CSRF protection can be added here if needed
+    # For now, we rely on SameSite cookie attribute
+    # which provides CSRF protection for modern browsers
+    
+    if settings.COOKIE_SAMESITE in ["lax", "strict"]:
+        logger.info(f"CSRF protection via SameSite={settings.COOKIE_SAMESITE} cookies")
+    else:
+        logger.warning(
+            "SameSite=none detected. Consider implementing additional CSRF protection."
+        )
