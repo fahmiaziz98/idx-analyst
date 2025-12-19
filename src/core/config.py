@@ -16,8 +16,6 @@ class Settings(BaseSettings):
     API_TITLE: str = "IDX-Analyst RAG API"
     API_VERSION: str = "1.0.0"
     API_DESCRIPTION: str = "MVP RAG system for Indonesian financial reports"
-    ENVIRONMENT: str = Field(default="development", pattern="^(development|staging|production)$")
-
     ENVIRONMENT: Literal["development", "staging", "production"] = Field(
         default="development", description="Application environment"
     )
