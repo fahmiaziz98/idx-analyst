@@ -148,24 +148,9 @@ def setup_middleware(app: FastAPI):
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
         logger.info(f"Trusted Host Middleware enabled: {allowed_hosts}")
 
-    # 2. CORS Middleware
-    # In production, this should be more restrictive
-    cors_origins = settings.ALLOWED_REDIRECT_DOMAINS if settings.is_production else ["*"]
-
-    # Convert domain list to full URLs for CORS
-    if settings.is_production:
-        cors_origins = [f"https://{domain}" for domain in cors_origins]
-    else:
-        cors_origins = [
-            "http://localhost:8501",
-            "http://localhost:3000",
-            "http://127.0.0.1:8501",
-            "http://127.0.0.1:3000",
-        ]
-
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins,
+        allow_origins=settings.ALLOWED_ORIGINS,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],

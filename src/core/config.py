@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     """
 
     API_TITLE: str = "IDX-Analyst RAG API"
-    API_VERSION: str = "1.0.0"
+    API_VERSION: str = "1.1.0"
     API_DESCRIPTION: str = "MVP RAG system for Indonesian financial reports"
     ENVIRONMENT: Literal["development", "staging", "production"] = Field(
         default="development", description="Application environment"
@@ -54,11 +54,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 7860  # | 8000
     WORKERS: int = 4
-    ALLOWED_ORIGINS: list[str] = [
-        "http://localhost:8501",  # Streamlit default
-        "http://localhost:3000",  # React default (future)
-        "http://127.0.0.1:8501",
-    ]
+    
     # Database Settings
     DATABASE_URL: str | None = None
 
@@ -81,6 +77,10 @@ class Settings(BaseSettings):
         default_factory=lambda: ["localhost", "127.0.0.1"],
         description="Whitelist of allowed redirect domains for OAuth",
     )
+    ALLOWED_ORIGINS: list[str] = Field(
+        default_factory=lambda: ["http://localhost:8501", "http://localhost:3000", "http://127.0.0.1:8501"],
+        description="Whitelist of allowed origins for CORS",
+    )
 
     # Frontend URL
     FRONTEND_URL: str = Field(
@@ -90,9 +90,6 @@ class Settings(BaseSettings):
     # Security Headers
     ENABLE_SECURITY_HEADERS: bool = Field(default=True)
     HSTS_MAX_AGE: int = Field(default=31536000)  # 1 year
-
-    # Rate Limiting
-    RATE_LIMIT_USER: str = Field(default="100/minute")
 
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"
     MODEL_GEMINI_FLASH: str = "google_genai:gemini-2.5-flash-lite"
@@ -159,7 +156,7 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def validate_unique_secrets(self) -> "SecuritySettings":
+    def validate_unique_secrets(self) -> "Settings":
         """Ensure all secrets are unique"""
         secrets_map = {
             "JWT_SECRET": self.JWT_SECRET,
@@ -181,7 +178,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def set_environment_defaults(self) -> "SecuritySettings":
+    def set_environment_defaults(self) -> "Settings":
         """Set secure defaults based on environment"""
         if self.ENVIRONMENT == "production":
             # Force secure settings in production
