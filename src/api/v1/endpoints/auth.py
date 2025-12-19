@@ -188,11 +188,11 @@ async def oauth_callback(
 
         # Append token to redirect URL for frontend usage (Streamlit needs this)
         # Check if URL already has query params
-        separator = "&" if "?" in redirect_url else "?"
-        redirect_url_with_token = f"{redirect_url}{separator}token={token.access_token}"
+        # separator = "&" if "?" in redirect_url else "?"
+        # redirect_url_with_token = f"{redirect_url}{separator}token={token.access_token}"
 
         # 6. Set secure HTTP-only cookies
-        response = RedirectResponse(url=redirect_url_with_token, status_code=status.HTTP_302_FOUND)
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 
         # Set access token cookie (HTTP-only, secure in production)
         response.set_cookie(

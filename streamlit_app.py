@@ -18,43 +18,72 @@ st.set_page_config(
 )
 
 # ===== State Management =====
+from http.cookies import SimpleCookie
+from streamlit.web.server.websocket_headers import _get_websocket_headers
+
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
 if "user_info" not in st.session_state:
     st.session_state["user_info"] = None
 
+def get_access_token_from_cookies() -> str | None:
+    """Extract access_token from browser cookies via WebSocket headers"""
+    headers = _get_websocket_headers()
+    if not headers:
+        return None
+    
+    cookie_header = headers.get("Cookie")
+    if not cookie_header:
+        return None
+    
+    cookie = SimpleCookie()
+    try:
+        cookie.load(cookie_header)
+        if "access_token" in cookie:
+            return cookie["access_token"].value
+    except Exception:
+        pass
+        
+    return None
 
 def init_auth_state():
-    """Handle token extraction from URL and validation"""
-    query_params = st.query_params
-
-    # 1. Check for token in URL (Callback from Google)
-    if "token" in query_params:
-        token = query_params["token"]
+    """Handle authentication via cookies"""
+    # Try to get token from cookies
+    token = get_access_token_from_cookies()
+    
+    if token:
         st.session_state["jwt_token"] = token
-        st.query_params.clear()
-        st.rerun()
-
-    # 2. Check validity of existing token
-    if "jwt_token" in st.session_state:
+        
+        # Verify token and get user info if not present
         if not st.session_state["user_info"]:
-            user = get_current_user(st.session_state["jwt_token"])
+            user = get_current_user(token)
             if user:
                 st.session_state["user_info"] = user
             else:
                 # Token invalid/expired
-                logout()
+                st.session_state["jwt_token"] = None
+    else:
+        st.session_state["jwt_token"] = None
 
 
 def logout():
-    """Clear session and logout"""
+    """Call backend logout and clear session"""
+    if "jwt_token" in st.session_state and st.session_state["jwt_token"]:
+        try:
+            headers = {"Authorization": f"Bearer {st.session_state['jwt_token']}"}
+            requests.post(f"{API_BASE_URL}/api/v1/auth/logout", headers=headers)
+        except Exception:
+            pass
+            
     if "jwt_token" in st.session_state:
         del st.session_state["jwt_token"]
     if "user_info" in st.session_state:
         del st.session_state["user_info"]
     if "messages" in st.session_state:
         st.session_state["messages"] = []
+    
+    # Rerun to show login page
     st.rerun()
 
 
