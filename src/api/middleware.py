@@ -157,7 +157,7 @@ def setup_middleware(app: FastAPI):
         expose_headers=["X-Process-Time", "X-Request-ID"],
         max_age=3600 if settings.is_production else 0,
     )
-    logger.info(f"CORS Middleware configured: {cors_origins}")
+    logger.info(f"CORS Middleware configured: {settings.ALLOWED_ORIGINS}")
 
     # 3. Session Middleware
     app.add_middleware(
