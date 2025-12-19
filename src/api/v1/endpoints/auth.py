@@ -1,13 +1,13 @@
 import secrets
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Response
 from fastapi.responses import RedirectResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependency import get_current_user
-from src.auth.jwt import create_token_pair, get_token_remaining_seconds
+from src.auth.jwt import create_token_pair, get_token_remaining_seconds, verify_token
 from src.auth.oauth import oauth
 from src.auth.token_blacklist import TokenBlacklist, get_token_blacklist
 from src.core.config import settings
@@ -186,13 +186,18 @@ async def oauth_callback(
         # 5. Get redirect url from session
         redirect_url = request.session.pop("redirect_url", settings.FRONTEND_URL)
 
-        # Append token to redirect URL for frontend usage (Streamlit needs this)
-        # Check if URL already has query params
-        # separator = "&" if "?" in redirect_url else "?"
-        # redirect_url_with_token = f"{redirect_url}{separator}token={token.access_token}"
+        # ===== FIXED: Pass token to Streamlit via URL parameter =====
+        # This is required because Streamlit cannot read httponly cookies
+        # For production React app, remove this and use httponly cookies only
+        separator = "&" if "?" in redirect_url else "?"
+        redirect_url_with_token = (
+            f"{redirect_url}{separator}"
+            f"token={token.access_token}&"
+            f"refresh_token={token.refresh_token}"
+        )
 
         # 6. Set secure HTTP-only cookies
-        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+        response = RedirectResponse(url=redirect_url_with_token, status_code=status.HTTP_302_FOUND)
 
         # Set access token cookie (HTTP-only, secure in production)
         response.set_cookie(
@@ -231,6 +236,167 @@ async def oauth_callback(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Authentication failed: {str(e)}",
+        ) from e
+
+
+# ===== Refresh Token =====
+@router.post("/refresh")
+async def refresh_access_token(
+    request: Request,
+    response: Response,
+    # user: User = Depends(get_current_user),
+    blacklist: TokenBlacklist = Depends(get_token_blacklist),
+):
+    """
+    Refresh access token using refresh token.
+
+    This endpoint allows clients to obtain a new access token without re-authenticating
+    when the current access token expires. This provides better UX.
+
+    Flow:
+    1. Extract refresh token from cookie or Authorization header
+    2. Verify refresh token (signature, expiration, not blacklisted)
+    3. Generate new access token
+    4. Optionally rotate refresh token (security best practice)
+    5. Blacklist old tokens
+    6. Return new tokens
+
+    Request:
+        Cookie: refresh_token=<token> OR
+        Authorization: Bearer <refresh_token>
+
+    Returns:
+        {
+            "access_token": "new_access_token",
+            "token_type": "bearer",
+            "expires_in": 900
+        }
+
+    Raises:
+        HTTPException 401: Refresh token invalid, expired, or revoked
+        HTTPException 500: Token refresh failed
+
+    Example:
+        POST /auth/refresh
+        Cookie: refresh_token=eyJ...
+        
+        Response:
+        {
+            "access_token": "eyJhbGc...",
+            "token_type": "bearer",
+            "expires_in": 900
+        }
+    """
+    try:
+        # Extract refresh token from cookie or header
+        refresh_token = request.cookies.get("refresh_token")
+
+        if not refresh_token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                refresh_token = auth_header.split("Bearer ")[1]
+
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Verify refresh token
+        token_data = verify_token(refresh_token, token_type="refresh")
+        if not token_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check if refresh token is blacklist
+        if await blacklist.is_revoked(refresh_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Check if user all token have been revoked
+        user_revoked_at = await blacklist.is_user_revoked(token_data.user_id)
+        if user_revoked_at:
+            if token_data.issued_at and token_data.issued_at < user_revoked_at:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="All user tokens revoked. Please login again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+        # 5. Get user info (we need role and email for new access token)
+        # In production, you should fetch this from database
+        # For now, we trust the data in the refresh token
+        from sqlalchemy import select
+        from src.database.session import get_db
+        
+        async for db in get_db():
+            result = await db.execute(
+                select(User).where(User.id == token_data.user_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # 6. Generate new token pairs
+            new_tokens = create_token_pair(
+                user_id=user.id,
+                role=user.role,
+                email=user.email,
+            )
+
+            # 7. Blacklist old refresh token
+            remaining = get_token_remaining_seconds(refresh_token)
+            if remaining:
+                await blacklist.add(refresh_token, remaining)
+                logger.info(f"Old refresh token blacklisted for user {user.email}")
+            
+            # 8. Set new cookies
+            response.set_cookie(
+                key="access_token",
+                value=new_tokens.access_token,
+                httponly=True,
+                secure=settings.COOKIE_SECURE,
+                samesite=settings.COOKIE_SAMESITE,
+                max_age=new_tokens.expires_in,
+                path="/",
+            )
+            
+            response.set_cookie(
+                key="refresh_token",
+                value=new_tokens.refresh_token,
+                httponly=True,
+                secure=settings.COOKIE_SECURE,
+                samesite=settings.COOKIE_SAMESITE,
+                max_age=settings.jwt_refresh_token_expire_seconds,
+                path="/api/v1/auth",
+            )
+            
+            logger.success(f"Tokens refreshed for user {user.email}")
+            
+            # 9. Return new access token (for clients that don't use cookies)
+            return {
+                "access_token": new_tokens.access_token,
+                "token_type": "bearer",
+                "expires_in": new_tokens.expires_in,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed",
         ) from e
 
 
@@ -284,45 +450,55 @@ async def logout(
         POST /auth/logout
         Cookie: access_token=...; refresh_token=...
     """
-    access_token = request.cookies.get("access_token")
-    refresh_token = request.cookies.get("refresh_token")
+    try:
+        access_token = request.cookies.get("access_token")
+        refresh_token = request.cookies.get("refresh_token")
 
-    # Revoke access token if present
-    if access_token:
-        remaining = get_token_remaining_seconds(access_token)
-        if remaining:
-            await blacklist.revoke_token(access_token, remaining)
-            logger.info(f"Access token revoked for user {user.email}")
-        else:
-            logger.info(f"Access token expired for user {user.email}")
+        # Revoke access token if present
+        if access_token:
+            remaining = get_token_remaining_seconds(access_token)
+            if remaining:
+                await blacklist.revoke_token(access_token, remaining)
+                logger.info(f"Access token revoked for user {user.email}")
+            else:
+                logger.info(f"Access token expired for user {user.email}")
 
-    # Revoke refresh token if present
-    if refresh_token:
-        remaining = get_token_remaining_seconds(refresh_token)
-        if remaining:
-            await blacklist.revoke_token(refresh_token, remaining)
-            logger.info(f"Refresh token revoked for user {user.email}")
-        else:
-            logger.info(f"Refresh token expired for user {user.email}")
+        # Revoke refresh token if present
+        if refresh_token:
+            remaining = get_token_remaining_seconds(refresh_token)
+            if remaining:
+                await blacklist.revoke_token(refresh_token, remaining)
+                logger.info(f"Refresh token revoked for user {user.email}")
+            else:
+                logger.info(f"Refresh token expired for user {user.email}")
 
-    response = RedirectResponse(url=settings.FRONTEND_URL, status_code=status.HTTP_302_FOUND)
+        response = RedirectResponse(url=settings.FRONTEND_URL, status_code=status.HTTP_302_FOUND)
 
-    # Clear cookies
-    response.delete_cookie(
-        key="access_token",
-        # domain=settings.COOKIE_DOMAIN,
-        path="/",
-    )
+        # Clear cookies
+        response.delete_cookie(
+            key="access_token",
+            # domain=settings.COOKIE_DOMAIN,
+            path="/",
+        )
 
-    response.delete_cookie(
-        key="refresh_token",
-        # domain=settings.COOKIE_DOMAIN,
-        path="/api/v1/auth",
-    )
+        response.delete_cookie(
+            key="refresh_token",
+            # domain=settings.COOKIE_DOMAIN,
+            path="/api/v1/auth",
+        )
 
-    logger.success(f"User {user.email} logged out successfully")
+        logger.success(f"User {user.email} logged out successfully")
 
-    return response
+        return response
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed",
+        ) from e
 
 
 @router.post("/revoke-all")
