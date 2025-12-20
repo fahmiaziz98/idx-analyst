@@ -78,7 +78,14 @@ class Settings(BaseSettings):
         description="Whitelist of allowed redirect domains for OAuth",
     )
     ALLOWED_ORIGINS: list[str] = Field(
-        default_factory=lambda: ["http://localhost:8501", "http://localhost:3000", "http://127.0.0.1:8501"],
+        default_factory=lambda: [
+            "http://localhost:8501", 
+            "http://localhost:3000", 
+            "http://127.0.0.1:8501",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173"
+        ],
         description="Whitelist of allowed origins for CORS",
     )
 

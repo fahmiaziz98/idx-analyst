@@ -189,15 +189,15 @@ async def oauth_callback(
         # ===== FIXED: Pass token to Streamlit via URL parameter =====
         # This is required because Streamlit cannot read httponly cookies
         # For production React app, remove this and use httponly cookies only
-        separator = "&" if "?" in redirect_url else "?"
-        redirect_url_with_token = (
-            f"{redirect_url}{separator}"
-            f"token={token.access_token}&"
-            f"refresh_token={token.refresh_token}"
-        )
+        # separator = "&" if "?" in redirect_url else "?"
+        # redirect_url_with_token = (
+        #     f"{redirect_url}{separator}"
+        #     f"token={token.access_token}&"
+        #     f"refresh_token={token.refresh_token}"
+        # )
 
         # 6. Set secure HTTP-only cookies
-        response = RedirectResponse(url=redirect_url_with_token, status_code=status.HTTP_302_FOUND)
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 
         # Set access token cookie (HTTP-only, secure in production)
         response.set_cookie(

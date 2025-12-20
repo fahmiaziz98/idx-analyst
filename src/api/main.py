@@ -1,4 +1,5 @@
 import uuid
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
             raise RuntimeError("Redis connection failed") from e
 
     try:
+        time.sleep(5)
         logger.info("Verifying database connection...")
         async with engine.begin() as conn:
             from sqlalchemy import text

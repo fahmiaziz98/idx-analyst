@@ -27,6 +27,9 @@ async def websocket_endpoint(
         token: JWT token for authentication.
     """
     if not token:
+        token = websocket.cookies.get("access_token")
+
+    if not token:
         await websocket.close(code=1008, reason="Missing token")
         return
 
