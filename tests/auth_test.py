@@ -1,3 +1,6 @@
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -6,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.main import app
 from src.auth.jwt import create_access_token, verify_token
+from src.auth.token_blacklist import get_token_blacklist
 from src.database.models import User, UserRole
 from src.database.session import AsyncSessionLocal, create_tables, drop_tables, engine
 
@@ -14,8 +18,16 @@ client = TestClient(app)
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
-    """Create fresh database per test"""
+    """Create fresh database per test and mock blacklist"""
     await create_tables()
+
+    # Create mock for blacklist
+    mock_blacklist = AsyncMock()
+    mock_blacklist.is_revoked.return_value = False
+    mock_blacklist.is_user_revoked.return_value = None
+
+    app.dependency_overrides[get_token_blacklist] = lambda: mock_blacklist
+
     session = AsyncSessionLocal()
     try:
         yield session
@@ -23,6 +35,8 @@ async def db_session():
         await session.close()
         await drop_tables()
         await engine.dispose()
+        # Clean up dependency override
+        app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
@@ -72,16 +86,17 @@ async def test_admin(db_session: AsyncSession):
 # ===== JWT Tests =====
 def test_create_access_token():
     """Test JWT token creation"""
-    token = create_access_token(user_id="user-123", email="test@example.com", role="user")
+    token, jti = create_access_token(user_id="user-123", email="test@example.com", role="user")
 
     assert isinstance(token, str)
+    assert isinstance(jti, str)
     parts = token.split(".")
     assert len(parts) == 3
 
 
 def test_verify_valid_token():
     """Test verify valid token"""
-    token = create_access_token(user_id="user-123", email="test@example.com", role="user")
+    token, _ = create_access_token(user_id="user-123", email="test@example.com", role="user")
 
     token_data = verify_token(token)
 
@@ -100,7 +115,7 @@ def test_verify_invalid_token():
 
 def test_token_with_admin_role():
     """Test token with admin role"""
-    token = create_access_token(user_id="admin-123", email="admin@example.com", role="admin")
+    token, _ = create_access_token(user_id="admin-123", email="admin@example.com", role="admin")
 
     token_data = verify_token(token)
 
@@ -121,13 +136,13 @@ def test_login_endpoint():
 async def test_get_me_without_token():
     """Test /me endpoint without token"""
     response = client.get("/api/v1/auth/me")
-    assert response.status_code == 403
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_get_me_with_valid_token(test_user):
     """Test /me endpoint with valid token"""
-    token = create_access_token(
+    token, _ = create_access_token(
         user_id=test_user.id, email=test_user.email, role=test_user.role.value
     )
 
@@ -151,18 +166,16 @@ async def test_get_me_with_invalid_token():
 
 def test_token_cannot_be_modified():
     """Test that modified token will be rejected"""
-    token = create_access_token(user_id="user-123", email="test@example.com", role="user")
+    token_str, _ = create_access_token(user_id="user-123", email="test@example.com", role="user")
 
-    modified_token = token[:-1] + "X"
+    modified_token = token_str[:-1] + "X"
     token_data = verify_token(modified_token)
     assert token_data is None
 
 
 def test_expired_token_rejected():
     """Test expired token is rejected"""
-    from datetime import timedelta
-
-    token = create_access_token(
+    token, _ = create_access_token(
         user_id="user-123",
         email="test@example.com",
         role="user",
