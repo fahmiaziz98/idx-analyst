@@ -45,7 +45,7 @@ class TokenBlacklist:
             revoked_at = datetime.now(UTC).isoformat()
 
             await self.redis.setex(name=key, time=expiry_seconds, value=revoked_at)
-            logger.info(f"Token revoked successfully (expires in {expiry_seconds}s)")
+            logger.success(f"Token revoked successfully (expires in {expiry_seconds}s)")
             return True
 
         except RedisError as e:
@@ -64,6 +64,7 @@ class TokenBlacklist:
         """
         try:
             key = f"{self._prefix}{token}"
+            logger.info(f"Token revocation checked: {key[:10]}...")
             return await self.redis.exists(key)
         except RedisError as e:
             logger.error(f"Failed to check token revocation: {e}")
@@ -86,7 +87,6 @@ class TokenBlacklist:
         """
         try:
             key = f"{self._prefix}user:{user_id}"
-
             revoked_at = datetime.now(UTC).isoformat()
 
             # Store user-level revocation with timestamp
@@ -115,6 +115,7 @@ class TokenBlacklist:
 
             if value:
                 # Parse ISO format timestamp
+                logger.info(f"User {user_id} is revoked at {value.decode()[:10]}...")
                 return datetime.fromisoformat(value.decode())
             return None
 

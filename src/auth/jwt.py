@@ -157,7 +157,7 @@ def create_access_token(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    logger.debug(
+    logger.info(
         f"Access token created for user {user_id} (expires in {expires_delta or settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES}m)"
     )
 
@@ -215,7 +215,7 @@ def create_refresh_token(
         algorithm=settings.JWT_ALGORITHM,
     )
 
-    logger.debug(
+    logger.info(
         f"Refresh token created for user {user_id} (expires in {settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS} days)"
     )
 
@@ -429,28 +429,3 @@ def is_token_expired(token: str) -> bool:
     if expiry:
         return datetime.now(UTC) > expiry
     return True  # Treat invalid tokens as expired
-
-
-def decode_token_unsafe(token: str) -> dict | None:
-    """
-    Decode token payload without verification (for debugging only).
-
-    WARNING: This does NOT verify the token signature.
-    Only use for debugging and logging purposes.
-
-    Args:
-        token: JWT token string
-
-    Returns:
-        Token payload dictionary or None
-    """
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET,
-            algorithms=[settings.JWT_ALGORITHM],
-            options={"verify_signature": False},
-        )
-        return payload
-    except JWTError:
-        return None
