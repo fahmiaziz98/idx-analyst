@@ -1,0 +1,5 @@
+{
+  "name": "Modern ChatGPT Clone",
+  "description": "A clean, minimalist chatbot interface built with React and Tailwind CSS, featuring Google Auth integration, SSE/WebSocket streaming, and a responsive sidebar layout.",
+  "requestFramePermissions": []
+}

@@ -6,7 +6,7 @@ __pycache__/
 # C extensions
 *.so
 # ignore folder frontend
-frontend/
+# frontend/
 
 bacaan.md
 migrations/
