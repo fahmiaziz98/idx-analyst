@@ -1,6 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, Sparkles, Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Message, ChatMode } from '../types';
 
 interface ChatWindowProps {
@@ -33,16 +35,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isStre
       <header className="h-14 border-b border-gray-100 flex items-center px-6 justify-between shrink-0">
         <h2 className="text-sm font-medium text-gray-700">New Conversation</h2>
         <div className="flex items-center gap-2">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-            mode === 'SSE' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
-          }`}>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${mode === 'SSE' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
+            }`}>
             {mode} Mode
           </span>
         </div>
       </header>
 
       {/* Messages */}
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto custom-scrollbar flex flex-col"
       >
@@ -59,8 +60,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isStre
         ) : (
           <div className="max-w-3xl w-full mx-auto p-4 space-y-8">
             {messages.map((msg) => (
-              <div 
-                key={msg.id} 
+              <div
+                key={msg.id}
                 className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {msg.role === 'assistant' && (
@@ -68,12 +69,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isStre
                     <Bot size={18} />
                   </div>
                 )}
-                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  msg.role === 'user' 
-                    ? 'bg-gray-100 text-gray-900 border border-gray-200' 
-                    : 'bg-white text-gray-800'
-                }`}>
-                  {msg.content}
+                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${msg.role === 'user'
+                  ? 'bg-gray-100 text-gray-900 border border-gray-200'
+                  : 'bg-white text-gray-800'
+                  }`}>
+                  {msg.role === 'assistant' ? (
+                    <div className="prose prose-sm prose-slate max-w-none prose-headings:font-bold prose-headings:text-gray-900 prose-p:text-gray-800 prose-a:text-blue-600 prose-strong:text-gray-900 prose-code:text-emerald-700 prose-pre:bg-gray-50 prose-pre:border prose-pre:border-gray-200 prose-table:border prose-table:border-collapse prose-th:bg-gray-50 prose-th:px-4 prose-th:py-2 prose-td:border prose-td:px-4 prose-td:py-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    msg.content
+                  )}
                 </div>
                 {msg.role === 'user' && (
                   <div className="w-8 h-8 shrink-0 rounded-lg bg-gray-900 flex items-center justify-center text-white">
@@ -99,7 +107,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isStre
 
       {/* Input */}
       <div className="p-4 bg-white border-t border-gray-100">
-        <form 
+        <form
           onSubmit={handleSubmit}
           className="max-w-3xl mx-auto relative group"
         >
@@ -114,11 +122,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isStre
           <button
             type="submit"
             disabled={!input.trim() || isStreaming}
-            className={`absolute right-2 top-2 p-2 rounded-lg transition-all ${
-              !input.trim() || isStreaming 
-                ? 'text-gray-300' 
-                : 'text-white bg-gray-900 hover:bg-black shadow-sm'
-            }`}
+            className={`absolute right-2 top-2 p-2 rounded-lg transition-all ${!input.trim() || isStreaming
+              ? 'text-gray-300'
+              : 'text-white bg-gray-900 hover:bg-black shadow-sm'
+              }`}
           >
             <Send size={18} />
           </button>
