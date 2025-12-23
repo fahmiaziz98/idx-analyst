@@ -96,6 +96,7 @@ class Settings(BaseSettings):
 
     # Security Headers
     ENABLE_SECURITY_HEADERS: bool = Field(default=True)
+    ENABLE_CRF_PROTECTION: bool = True
     HSTS_MAX_AGE: int = Field(default=31536000)  # 1 year
 
     MODEL_GPT_OSS_20B: str = "groq:openai/gpt-oss-20b"

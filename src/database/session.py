@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -21,7 +22,6 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
 )
 
-
 async def get_db() -> AsyncSession:
     """
     Dependency for getting async database session.
@@ -29,6 +29,8 @@ async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         try:
             yield session
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Database session error: {e}")
             await session.rollback()

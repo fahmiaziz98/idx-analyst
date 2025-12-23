@@ -5,8 +5,8 @@ import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
 import { User, Conversation, Message, ChatMode } from './types';
 import { STORAGE_KEYS, CHAT_ENDPOINTS, AUTH_ENDPOINTS } from './constants';
-import { fetchMe } from './services/api';
-import { LogIn, Sparkles } from 'lucide-react';
+import { fetchMe, fetchWithCSRF } from './services/api';
+import { Sparkles } from 'lucide-react';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -134,7 +134,13 @@ const App: React.FC = () => {
       setActiveId(currentId);
     }
 
-    const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now() };
+    const userMsg: Message = {
+      id: uuidv4(),
+      role: 'user',
+      content,
+      timestamp: Date.now()
+    };
+
     const updatedConversations = currentConversations.map(c =>
       c.id === currentId ? { ...c, messages: [...c.messages, userMsg], updatedAt: Date.now() } : c
     );
@@ -143,10 +149,9 @@ const App: React.FC = () => {
 
     if (mode === 'SSE') {
       try {
-        const response = await fetch(CHAT_ENDPOINTS.STREAM, {
+        const response = await fetchWithCSRF(CHAT_ENDPOINTS.STREAM, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({
             messages: content,
             conversation_id: currentId

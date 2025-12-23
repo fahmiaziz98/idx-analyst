@@ -14,7 +14,5 @@ export const CHAT_ENDPOINTS = {
 };
 
 export const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'chat_access_token',
-  REFRESH_TOKEN: 'chat_refresh_token',
   CONVERSATIONS: 'chat_history',
 };

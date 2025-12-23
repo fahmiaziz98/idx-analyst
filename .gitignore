@@ -7,6 +7,7 @@ __pycache__/
 *.so
 # ignore folder frontend
 # frontend/
+.github/copilot-instructions.md
 
 bacaan.md
 migrations/

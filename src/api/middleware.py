@@ -1,7 +1,8 @@
 import time
+import secrets
 from collections.abc import Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -49,7 +50,7 @@ class SecurityHeadersMiddleware:
             "connect-src 'self' https://accounts.google.com"
         )
         response.headers["Content-Security-Policy"] = csp_policy
-        
+
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
 
@@ -98,6 +99,105 @@ class MetricsMiddleware:
         # Add custom headers
         response.headers["X-Process-Time"] = f"{process_time:.4f}"
         response.headers["X-Request-ID"] = request.headers.get("X-Request-ID", "not-set")
+
+        return response
+
+
+class CSRFProtectionMiddleware:
+    """
+    Double Submit Cookie CSRF Protection.
+    How it works:
+    1. Server generates random CSRF token
+    2. Token stored in cookie (SameSite protection)
+    3. Client reads cookie and sends token in header
+    4. Server validates cookie matches header
+
+    Why this works:
+    - Attacker cannot read cookie due to Same-Origin Policy
+    - Attacker cannot set custom headers in CSRF attack
+    - Even if attacker guesses token, they can't set the cookie
+
+    Protection against:
+    - CSRF attacks via forms
+    - CSRF attacks via AJAX
+    - Subdomain attacks (with proper SameSite)
+
+    Does NOT protect against:
+    - XSS attacks (use Content Security Policy)
+    - Man-in-the-middle (use HTTPS)
+    """
+
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+        # Paths that don't require CSRF protection
+        self.exempt_paths = [
+            "/api/v1/auth/callback",  # OAuth callback
+            "/api/v1/auth/login",  # OAuth initiation
+            "/health",  # Health check
+            "/docs",  # API docs
+            "/openapi.json",  # OpenAPI spec
+        ]
+
+        # Only protect state-changing methods
+        self.protected_methods = ["POST", "PUT", "DELETE", "PATCH"]
+
+    async def __call__(self, request: Request, call_next: Callable) -> Response:
+        # Check if path is exempt
+        is_exempt = any(request.url.path.startswith(path) for path in self.exempt_paths)
+
+        # Check if method needs protection
+        needs_protection = request.method in self.protected_methods and not is_exempt
+
+        if needs_protection:
+            csrf_cookie = request.cookies.get("csrf_token")
+            csrf_header = request.headers.get("X-CSRF-Token")
+
+            # Verify both exist
+            if not csrf_cookie or not csrf_header:
+                logger.warning(
+                    f"⚠️ CSRF token missing: "
+                    f"cookie={bool(csrf_cookie)}, header={bool(csrf_header)} "
+                    f"from {request.client.host if request.client else 'unknown'}"
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={
+                        "error": "csrf_token_missing",
+                        "message": "CSRF token required for this operation",
+                    },
+                )
+
+            if not secrets.compare_digest(csrf_cookie, csrf_header):
+                logger.warning(
+                    f"⚠️ CSRF token mismatch: "
+                    f"cookie={csrf_cookie}, header={csrf_header} "
+                    f"from {request.client.host if request.client else 'unknown'}"
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={
+                        "error": "csrf_token_mismatch",
+                        "message": "CSRF token mismatch for this operation",
+                    },
+                )
+            logger.debug(f"CSRF token validated for {request.method} {request.url.path}")
+
+        response = await call_next(request)
+
+        # Set CSRF token cookie if not present
+        if "csrf_token" not in request.cookies:
+            csrf_token = secrets.token_urlsafe(32)
+            response.set_cookie(
+                key="csrf_token",
+                value=csrf_token,
+                httponly=False,  # Must be readable by JavaScript
+                secure=settings.COOKIE_SECURE,
+                samesite=settings.COOKIE_SAMESITE,
+                max_age=86400,  # 24 hours
+                path="/",
+            )
+            logger.debug(f"New CSRF token generated: {csrf_token[:8]}...")
 
         return response
 
@@ -174,36 +274,18 @@ def setup_middleware(app: FastAPI):
         app.middleware("http")(SecurityHeadersMiddleware(app))
         logger.info("Security Headers Middleware enabled")
 
-    # 5. Metrics Middleware
+    # 5. CSRF Protection Middleware
+    if settings.ENABLE_CRF_PROTECTION:
+        app.middleware("http")(CSRFProtectionMiddleware(app))
+        logger.info("CSRF Protection Middleware enabled")
+
+    # 6. Metrics Middleware
     app.middleware("http")(MetricsMiddleware(app))
     logger.info("Metrics Middleware enabled")
 
-    # 6. Rate Limiting
+    # 7. Rate Limiting
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     logger.info("Rate Limiting configured")
 
     logger.success("All middleware configured successfully")
-
-
-def setup_csrf_protection(app: FastAPI):
-    """
-    Set up CSRF protection for state-changing operations.
-    
-    Note: This is optional and depends on your frontend implementation.
-    For API-only applications with JWT in cookies, additional CSRF protection
-    is recommended for state-changing operations (POST, PUT, DELETE).
-    
-    Args:
-        app: FastAPI application instance
-    """
-    # CSRF protection can be added here if needed
-    # For now, we rely on SameSite cookie attribute
-    # which provides CSRF protection for modern browsers
-    
-    if settings.COOKIE_SAMESITE in ["lax", "strict"]:
-        logger.info(f"CSRF protection via SameSite={settings.COOKIE_SAMESITE} cookies")
-    else:
-        logger.warning(
-            "SameSite=none detected. Consider implementing additional CSRF protection."
-        )

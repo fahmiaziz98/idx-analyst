@@ -1,29 +1,36 @@
-
-import { STORAGE_KEYS, AUTH_ENDPOINTS } from '../constants';
+import { AUTH_ENDPOINTS } from '../constants';
 import { User } from '../types';
 
-export const getAccessToken = () => localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-export const setTokens = (access: string, refresh: string) => {
-  localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, access);
-  localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refresh);
-};
-export const clearTokens = () => {
-  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-  localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-};
+
+export function getCSRFToken(): string | null {
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Fetch with CSRF protection
+ * Use this for POST, PUT, DELETE, PATCH requests
+ */
+export async function fetchWithCSRF(
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const csrfToken = getCSRFToken();
+
+  return fetch(url, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      ...options.headers,
+      'X-CSRF-Token': csrfToken || '',
+    },
+  });
+}
 
 export async function fetchMe(): Promise<User | null> {
-  const token = getAccessToken();
-  // if (!token) return null; // Allow fetching with cookies
 
   try {
-    const headers: HeadersInit = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
     const response = await fetch(AUTH_ENDPOINTS.ME, {
-      headers,
       credentials: 'include',
     });
     if (!response.ok) throw new Error('Unauthorized');
@@ -35,22 +42,13 @@ export async function fetchMe(): Promise<User | null> {
 }
 
 export async function logoutApi() {
-  const token = getAccessToken();
   try {
-    const headers: HeadersInit = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    await fetch(AUTH_ENDPOINTS.LOGOUT, {
+    await fetchWithCSRF(AUTH_ENDPOINTS.LOGOUT, {
       method: 'POST',
-      headers,
-      credentials: 'include',
     });
   } catch (e) {
     console.error('Logout error', e);
   } finally {
-    clearTokens();
     window.location.href = '/';
   }
 }
