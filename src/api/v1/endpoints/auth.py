@@ -38,6 +38,8 @@ def validate_redirect_url(url: str):
 
     try:
         parsed = urlparse(url)
+        logger.info(f"Validating redirect URL: {url}")
+        logger.info(f"Parsed redirect URL: {parsed}")
 
         # Check if URL uses HTTPS in production
         if settings.is_production and parsed.scheme != "https":
@@ -207,7 +209,7 @@ async def oauth_callback(
             secure=settings.COOKIE_SECURE,  # HTTPS only in production
             samesite=settings.COOKIE_SAMESITE,  # CSRF protection
             # domain=security_settings.COOKIE_DOMAIN,
-            max_age=token.expires_in,
+            max_age=settings.jwt_access_token_expire_seconds,
             path="/",
         )
 
@@ -219,7 +221,7 @@ async def oauth_callback(
             secure=settings.COOKIE_SECURE,
             samesite=settings.COOKIE_SAMESITE,
             # domain=security_settings.COOKIE_DOMAIN,
-            max_age=token.expires_in,
+            max_age=settings.jwt_refresh_token_expire_seconds,  # 30 days, not 3 minutes!
             path="/api/v1/auth",  # Restrict to auth endpoints only
         )
 
@@ -297,11 +299,14 @@ async def refresh_access_token(
                 refresh_token = auth_header.split("Bearer ")[1]
 
         if not refresh_token:
+            logger.warning("Refresh attempt failed: No refresh token found in cookies or headers")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token not found",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+        logger.info("Attempting to verify refresh token...")
 
         # Verify refresh token
         token_data = verify_token(refresh_token, token_type="refresh")
@@ -314,11 +319,14 @@ async def refresh_access_token(
 
         # Check if refresh token is blacklist
         if await blacklist.is_revoked(refresh_token):
+            logger.warning(f"Refresh attempt failed: Token is blacklisted (revoked)")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token revoked",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        logger.info(f"Refresh token verified for user_id: {token_data.user_id}")
         
         # Check if user all token have been revoked
         user_revoked_at = await blacklist.is_user_revoked(token_data.user_id)
@@ -348,7 +356,8 @@ async def refresh_access_token(
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
-            # 6. Generate new token pairs
+            # 6. Generate token rotation
+            logger.info(f"Generating new token pair for user {user.email}")
             new_tokens = create_token_pair(
                 user_id=user.id,
                 role=user.role,
@@ -368,7 +377,7 @@ async def refresh_access_token(
                 httponly=True,
                 secure=settings.COOKIE_SECURE,
                 samesite=settings.COOKIE_SAMESITE,
-                max_age=new_tokens.expires_in,
+                max_age=settings.jwt_access_token_expire_seconds,
                 path="/",
             )
             
@@ -388,7 +397,7 @@ async def refresh_access_token(
             return {
                 "access_token": new_tokens.access_token,
                 "token_type": "bearer",
-                "expires_in": new_tokens.expires_in,
+                "expires_in": settings.jwt_access_token_expire_seconds,
             }
     except HTTPException:
         raise

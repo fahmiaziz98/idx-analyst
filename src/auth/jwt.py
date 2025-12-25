@@ -77,7 +77,6 @@ class TokenPair:
         access_token_jti: JTI of access token
         refresh_token_jti: JTI of refresh token
         token_type: Token type (always "bearer")
-        expires_in: Access token expiration in seconds
     """
 
     def __init__(
@@ -86,14 +85,12 @@ class TokenPair:
         refresh_token: str,
         access_token_jti: str,
         refresh_token_jti: str,
-        expires_in: int,
     ):
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.access_token_jti = access_token_jti
         self.refresh_token_jti = refresh_token_jti
         self.token_type = "bearer"
-        self.expires_in = expires_in
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API responses"""
@@ -101,7 +98,6 @@ class TokenPair:
             "access_token": self.access_token,
             "refresh_token": self.refresh_token,
             "token_type": self.token_type,
-            "expires_in": self.expires_in,
         }
 
 
@@ -250,7 +246,6 @@ def create_token_pair(
         refresh_token=refresh_token,
         access_token_jti=access_jti,
         refresh_token_jti=refresh_jti,
-        expires_in=settings.jwt_access_token_expire_seconds,
     )
 
 
