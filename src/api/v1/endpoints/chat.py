@@ -5,7 +5,7 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from src.api.middleware import limiter
-from src.auth.dependency import get_current_user
+from src.api.dependencies import get_current_user
 from src.core.exception import ServiceMaintenanceError
 from src.database.models import User
 from src.schemas.chat import ChatRequest, ChatResponse, StreamChunk

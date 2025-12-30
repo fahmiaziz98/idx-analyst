@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.dependency import get_current_user
+from src.api.dependencies import get_current_user
 from src.auth.jwt import create_token_pair, get_token_remaining_seconds, verify_token
 from src.auth.oauth import oauth
 from src.auth.token_blacklist import TokenBlacklist, get_token_blacklist

@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.api.dependencies import get_conversation_service
-from src.auth.dependency import get_current_user
+from src.api.dependencies import get_conversation_service, get_current_user
 from src.database.models import User
 from src.schemas.conversation_schema import (
     ConversationCreate,
