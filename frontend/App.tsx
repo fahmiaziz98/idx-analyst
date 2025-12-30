@@ -3,9 +3,16 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
-import { User, Conversation, Message, ChatMode } from './types';
-import { STORAGE_KEYS, CHAT_ENDPOINTS, AUTH_ENDPOINTS } from './constants';
-import { fetchMe, fetchWithCSRF } from './services/api';
+import { User, Conversation, Message } from './types';
+import { CHAT_ENDPOINTS, AUTH_ENDPOINTS } from './constants';
+import {
+  fetchMe,
+  getConversations,
+  getConversation,
+  createConversation,
+  deleteConversation,
+  addFeedback
+} from './services/api';
 import { Sparkles } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -14,7 +21,6 @@ const App: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
-  const [mode, setMode] = useState<ChatMode>('SSE');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
@@ -39,15 +45,6 @@ const App: React.FC = () => {
       if (currentUser) {
         setUser(currentUser);
         setIsAuthenticated(true);
-
-        // Load history from local storage
-        const saved = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS);
-        if (saved) setConversations(JSON.parse(saved));
-
-        // Redirect to /chat if at root
-        if (window.location.pathname === '/') {
-          navigate('/chat');
-        }
       } else {
         // Not authenticated, redirect to / if at /chat
         if (window.location.pathname !== '/') {
@@ -59,22 +56,68 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  // Persist History
+  // Load Conversations on Auth
   useEffect(() => {
-    if (conversations.length > 0) {
-      localStorage.setItem(STORAGE_KEYS.CONVERSATIONS, JSON.stringify(conversations));
+    if (isAuthenticated) {
+      loadConversations();
     }
-  }, [conversations]);
+  }, [isAuthenticated]);
+
+  const loadConversations = async () => {
+    try {
+      const data = await getConversations();
+      setConversations(data.items);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    }
+  };
+
+  // Handle URL Routing /chat/:id
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const match = currentPath.match(/\/chat\/([a-zA-Z0-9-]+)/);
+    if (match) {
+      const id = match[1];
+      if (id !== activeId) {
+        setActiveId(id);
+        loadConversationDetails(id);
+      }
+    } else if (currentPath === '/chat') {
+      setActiveId(null);
+    }
+  }, [currentPath, isAuthenticated]);
+
+  const loadConversationDetails = async (id: string) => {
+    try {
+      const conv = await getConversation(id);
+      setConversations(prev => {
+        const index = prev.findIndex(c => c.id === id);
+        if (index >= 0) {
+          const newConvs = [...prev];
+          newConvs[index] = conv;
+          return newConvs;
+        }
+        return [conv, ...prev];
+      });
+    } catch (error) {
+      console.error('Failed to load conversation details:', error);
+      // If failed (e.g. 404), navigate back to main chat
+      navigate('/chat');
+    }
+  };
 
   // WebSocket Connection Management
   useEffect(() => {
-    if (isAuthenticated && mode === 'WS' && currentPath === '/chat') {
-      // WS typically requires a token in URL if cookies can't be passed easily,
-      // but if the server supports cookie auth for WS, we don't need a token param.
-      // Assuming backend reads cookies for WS as well.
+    // Only connect if we are authenticated and have an active conversation
+    if (isAuthenticated && activeId) {
       const wsUrl = CHAT_ENDPOINTS.WEBSOCKET;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WS Connected');
+      };
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -85,12 +128,17 @@ const App: React.FC = () => {
         }
       };
 
+      ws.onerror = (error) => {
+        console.error("WS Error", error);
+        setIsStreaming(false);
+      }
+
       return () => ws.close();
     } else {
       wsRef.current?.close();
       wsRef.current = null;
     }
-  }, [isAuthenticated, mode, currentPath]);
+  }, [isAuthenticated, activeId]);
 
   const updateStreamingMessage = useCallback((content: string, conversationId: string) => {
     setConversations(prev => {
@@ -119,21 +167,30 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (content: string) => {
     let currentId = activeId;
-    let currentConversations = [...conversations];
 
+    // Create new conversation if needed
     if (!currentId) {
-      currentId = uuidv4();
-      const newConv: Conversation = {
-        id: currentId,
-        title: content.substring(0, 30) + '...',
-        messages: [],
-        updatedAt: Date.now()
-      };
-      currentConversations = [newConv, ...currentConversations];
-      setConversations(currentConversations);
-      setActiveId(currentId);
+      try {
+        const newConv = await createConversation(content.substring(0, 30));
+        currentId = newConv.id;
+
+        // Optimistically add to list
+        const convWithMsg: Conversation = {
+          ...newConv,
+          messages: []
+        };
+
+        setConversations(prev => [convWithMsg, ...prev]);
+        navigate(`/chat/${currentId}`);
+        // Wait for state update/routing effects to trigger WS connection
+        // The activeId effect will run and initialize wsRef.current
+      } catch (error) {
+        console.error('Failed to create conversation', error);
+        return;
+      }
     }
 
+    // Optimistically add user message
     const userMsg: Message = {
       id: uuidv4(),
       role: 'user',
@@ -141,61 +198,80 @@ const App: React.FC = () => {
       timestamp: Date.now()
     };
 
-    const updatedConversations = currentConversations.map(c =>
-      c.id === currentId ? { ...c, messages: [...c.messages, userMsg], updatedAt: Date.now() } : c
+    setConversations(prev =>
+      prev.map(c =>
+        c.id === currentId ? { ...c, messages: [...c.messages, userMsg], updatedAt: Date.now() } : c
+      )
     );
-    setConversations(updatedConversations);
+
     setIsStreaming(true);
 
-    if (mode === 'SSE') {
-      try {
-        const response = await fetchWithCSRF(CHAT_ENDPOINTS.STREAM, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: content,
+    // Wait for WS to be ready
+    const waitForWs = async () => {
+      let attempts = 0;
+      while (attempts < 50) { // 5 seconds max wait
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            message: content,
             conversation_id: currentId
-          })
-        });
+          }));
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      console.error("WS failed to connect in time");
+      setIsStreaming(false);
+    };
 
-        if (!response.body) throw new Error('No body');
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
+    waitForWs();
+  };
 
-        let done = false;
-        while (!done) {
-          const { value, done: doneReading } = await reader.read();
-          done = doneReading;
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.substring(6));
-                try {
-                  const data = JSON.parse(line.substring(6));
-                  if (data.content) updateStreamingMessage(data.content, currentId);
-                  if (data.done) done = true;
-                } catch (e) { }
-                if (data.done) done = true;
-              } catch (e) { }
-            }
-          }
+  const handleDeleteConversation = async (id: string) => {
+    if (confirm('Are you sure you want to delete this conversation?')) {
+      try {
+        await deleteConversation(id);
+        setConversations(prev => prev.filter(c => c.id !== id));
+        if (activeId === id) {
+          navigate('/chat');
         }
       } catch (error) {
-        console.error('SSE Stream error:', error);
-      } finally {
-        setIsStreaming(false);
+        console.error('Failed to delete conversation', error);
       }
-    } else if (mode === 'WS' && wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          message: content,
-          conversation_id: currentId
-        }));
-      } else {
-        setIsStreaming(false);
-      }
+    }
+  };
+
+  const handleSelectConversation = (id: string) => {
+    navigate(`/chat/${id}`);
+  };
+
+  const handleNewChat = () => {
+    navigate('/chat');
+  };
+
+  const handleFeedbackSubmit = async (messageId: string, feedback: 'positive' | 'negative', comment?: string) => {
+    try {
+      await addFeedback(messageId, feedback, comment);
+      // Update local state to reflect feedback
+      setConversations(prev => {
+        return prev.map(conv => {
+          if (conv.id === activeId) {
+            return {
+              ...conv,
+              messages: conv.messages.map(msg => {
+                if (msg.id === messageId) {
+                  return { ...msg, feedback, feedback_comment: comment };
+                }
+                return msg;
+              })
+            };
+          }
+          return conv;
+        });
+      });
+    } catch (error) {
+      console.error('Failed to submit feedback', error);
+      throw error; // Propagate to component
     }
   };
 
@@ -249,21 +325,16 @@ const App: React.FC = () => {
       <Sidebar
         conversations={conversations}
         activeId={activeId}
-        onSelect={setActiveId}
-        onNewChat={() => setActiveId(null)}
-        onDelete={(id) => {
-          setConversations(prev => prev.filter(c => c.id !== id));
-          if (activeId === id) setActiveId(null);
-        }}
+        onSelect={handleSelectConversation}
+        onNewChat={handleNewChat}
+        onDelete={handleDeleteConversation}
         user={user}
-        mode={mode}
-        onModeChange={setMode}
       />
       <ChatWindow
         messages={activeMessages}
         onSendMessage={handleSendMessage}
         isStreaming={isStreaming}
-        mode={mode}
+        onFeedbackSubmit={handleFeedbackSubmit}
       />
     </div>
   );

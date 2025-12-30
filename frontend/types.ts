@@ -14,6 +14,8 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  feedback?: 'positive' | 'negative' | null;
+  feedback_comment?: string | null;
 }
 
 export interface Conversation {
@@ -23,7 +25,7 @@ export interface Conversation {
   updatedAt: number;
 }
 
-export type ChatMode = 'SSE' | 'WS';
+
 
 export interface StreamChunk {
   content: string;

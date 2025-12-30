@@ -1,36 +1,87 @@
 from datetime import datetime
+from typing import Optional, Any
 
 
-class ServiceMaintenanceError(Exception):
+class ApplicationError(Exception):
+    """Base class for all application-specific errors."""
+    def __init__(
+        self, 
+        message: str, 
+        code: Optional[str] = None, 
+        details: Optional[Any] = None
+    ):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.details = details
+
+
+class ServiceMaintenanceError(ApplicationError):
     """
-    Custom exception raised when the circuit breaker is open.
-    Carries metadata for the frontend/user.
+    Raised when a service is in cooldown or maintenance mode (Circuit Breaker).
     """
-
     def __init__(self, service_name: str, reset_time: datetime, remaining_seconds: int):
         self.service_name = service_name
         self.reset_time = reset_time
         self.remaining_seconds = remaining_seconds
-        self.message = (
+        message = (
             f"Service '{service_name}' is currently in cooldown/maintenance. "
             f"Please try again in {remaining_seconds} seconds."
         )
-        super().__init__(self.message)
+        super().__init__(
+            message=message, 
+            code="SERVICE_MAINTENANCE",
+            details={
+                "service": service_name,
+                "reset_time": reset_time.isoformat(),
+                "retry_after": remaining_seconds
+            }
+        )
 
 
-class EmbeddingServiceError(Exception):
-    """
-    Custom exception for embedding service errors.
-    """
-
-    def __init__(self, message: str, original_error: Exception = None):
-        self.message = message
-        self.original_error = original_error
-        super().__init__(self.message)
+class EmbeddingServiceError(ApplicationError):
+    """Raised when an error occurs in the embedding service."""
+    def __init__(self, message: str, details: Optional[Any] = None):
+        super().__init__(message, code="EMBEDDING_SERVICE_ERROR", details=details)
 
 
-class TokenBlacklistError(Exception):
-    """Custom exception for token blacklist errors."""
+class TokenBlacklistError(ApplicationError):
+    """Raised when an error occurs in the token blacklist service."""
     def __init__(self, message: str):
-        self.message = message
-        super().__init__(self.message)
+        super().__init__(message, code="TOKEN_BLACKLIST_ERROR")
+
+
+class ConversationServiceError(ApplicationError):
+    """Raised when an error occurs in the conversation service."""
+    def __init__(self, message: str):
+        super().__init__(message, code="CONVERSATION_SERVICE_ERROR")
+
+
+class MessageServiceError(ApplicationError):
+    """Raised when an error occurs in the message service."""
+    def __init__(self, message: str):
+        super().__init__(message, code="MESSAGE_SERVICE_ERROR")
+
+
+class AuthServiceError(ApplicationError):
+    """Raised when an error occurs in the authentication service."""
+    def __init__(self, message: str, details: Optional[Any] = None):
+        super().__init__(message, code="AUTH_SERVICE_ERROR", details=details)
+
+
+class ChatServiceError(ApplicationError):
+    """Raised when an error occurs in the chat service."""
+    def __init__(self, message: str):
+        super().__init__(message, code="CHAT_SERVICE_ERROR")
+
+
+class WebSocketManagerError(ApplicationError):
+    """Raised when an error occurs in the WebSocket manager."""
+    def __init__(self, message: str):
+        super().__init__(message, code="WEBSOCKET_MANAGER_ERROR")
+
+
+class NotFoundError(ApplicationError):
+    """Raised when a requested resource is not found."""
+    def __init__(self, message: str):
+        super().__init__(message, code="NOT_FOUND")

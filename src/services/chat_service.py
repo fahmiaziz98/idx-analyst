@@ -3,24 +3,22 @@ from typing import Any
 
 from loguru import logger
 
-from src.core.exception import ServiceMaintenanceError
-from src.rag import agent_rag 
+from src.core.exception import ChatServiceError, ServiceMaintenanceError
+from src.rag import agent_rag
 
 
 class ChatService:
     """
-    Service layer for chat-related business logic.
-
-    This class encapsulates all business operations related to chat,
-    providing a clean separation from API/HTTP concerns.
+    Service layer for chat orchestration and RAG agent interactions.
+    Handles both synchronous and streaming chat processing.
     """
 
-    def __init__(self, agent=None):
+    def __init__(self, agent: Any = None):
         """
-        Initialize ChatService.
-        
+        Initialize ChatService with a RAG agent.
+
         Args:
-            agent: The RAG agent to use. Defaults to the global agent_rag.
+            agent: The RAG agent instance. Defaults to the global 'agent_rag'.
         """
         self.agent = agent or agent_rag
 
@@ -31,22 +29,29 @@ class ChatService:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
-        Process a non-streaming chat request.
+        Process a standard chat request synchronously.
 
         Args:
-            messages: str of messages to process.
-            conversation_id: Optional conversation ID.
-            metadata: Optional metadata.
+            messages: The input text messages to process.
+            conversation_id: Optional ID to track the conversation.
+            metadata: Optional dictionary for tracking/analytical data.
 
         Returns:
-            Dictionary containing response, conversation ID, and metadata.
+            A dictionary containing the response content, conversation ID, and metadata.
+
+        Raises:
+            ServiceMaintenanceError: If the underlying RAG service is in maintenance mode.
+            ChatServiceError: If an unexpected error occurs during processing.
         """
         try:
-            # Invoke RAG agent with messages
-            result = await self.agent.ainvoke({"messages": messages})
-            response_content = result["messages"][-1].content
+            logger.info(f"Processing chat request for conversation: {conversation_id}")
 
-            logger.info(f"Chat processed successfully. Conversation ID: {conversation_id}")
+            # Use the RAG agent to compute the response
+            result = await self.agent.ainvoke({"messages": messages})
+
+            # Extract the final response message
+            response_content = result["messages"][-1].content
+            logger.info(f"Successfully processed chat for: {conversation_id}")
 
             return {
                 "response": response_content,
@@ -54,38 +59,30 @@ class ChatService:
                 "metadata": metadata or {},
             }
 
-        except ServiceMaintenanceError as e:
-            logger.warning(
-                f"Service maintenance during chat processing. "
-                f"Service: {e.service_name}, "
-                f"Retry after: {e.remaining_seconds}s"
-            )
+        except ServiceMaintenanceError:
+            # Re-raise maintenance errors directly for upstream handling
             raise
-
         except Exception as e:
-            logger.error(
-                f"Error processing chat request. "
-                f"Conversation ID: {conversation_id}, "
-                f"Error: {str(e)}"
-            )
-            raise
+            logger.error(f"Failed to process chat ({conversation_id}): {str(e)}")
+            raise ChatServiceError(f"Chat processing failed: {str(e)}") from e
 
     async def process_stream_chat(
         self, messages: str, conversation_id: str | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        Process a streaming chat request.
+        Process a chat request and stream the response character-by-character or token-by-token.
 
         Args:
-            messages: str of messages to process.
-            conversation_id: Optional conversation ID.
+            messages: The input text messages to process.
+            conversation_id: Optional ID to track the conversation.
 
-        Returns:
-            Async generator yielding chat messages.
+        Yields:
+            Dictionaries containing message chunks or status updates (type: 'message', 'done', 'error').
         """
         try:
-            logger.info(f"Starting stream chat. Conversation ID: {conversation_id}")
+            logger.info(f"Initiating stream chat for conversation: {conversation_id}")
 
+            # Stream message chunks from the RAG agent
             async for msg, _ in self.agent.astream({"messages": messages}, stream_mode="messages"):
                 if msg.content:
                     yield {
@@ -94,16 +91,12 @@ class ChatService:
                         "conversation_id": conversation_id,
                     }
 
+            # Finalize the stream
             yield {"type": "done", "content": "", "conversation_id": conversation_id}
-
-            logger.info(f"Stream chat completed. Conversation ID: {conversation_id}")
+            logger.info(f"Stream chat finalized for: {conversation_id}")
 
         except ServiceMaintenanceError as e:
-            logger.warning(
-                f"Service maintenance during stream chat. "
-                f"Service: {e.service_name}, "
-                f"Conversation ID: {conversation_id}"
-            )
+            logger.warning(f"RAG service in maintenance during stream: {e.service_name}")
             yield {
                 "type": "error",
                 "data": {
@@ -117,7 +110,9 @@ class ChatService:
             }
 
         except Exception as e:
-            logger.error(
-                f"Error in stream chat. Conversation ID: {conversation_id}, Error: {str(e)}"
-            )
-            yield {"type": "error", "data": {"error": str(e)}, "conversation_id": conversation_id}
+            logger.error(f"Stream failure for conversation {conversation_id}: {str(e)}")
+            yield {
+                "type": "error",
+                "data": {"error": f"Internal stream error: {str(e)}"},
+                "conversation_id": conversation_id,
+            }

@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { Plus, MessageSquare, Trash2, LogOut, Settings, User as UserIcon, Zap, Globe } from 'lucide-react';
-import { Conversation, User, ChatMode } from '../types';
+import { Plus, MessageSquare, Trash2, LogOut, Settings, User as UserIcon } from 'lucide-react';
+import { Conversation, User } from '../types';
 import { logoutApi } from '../services/api';
 
 interface SidebarProps {
@@ -11,8 +11,6 @@ interface SidebarProps {
   onNewChat: () => void;
   onDelete: (id: string) => void;
   user: User | null;
-  mode: ChatMode;
-  onModeChange: (mode: ChatMode) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -21,9 +19,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSelect,
   onNewChat,
   onDelete,
-  user,
-  mode,
-  onModeChange
+  user
 }) => {
   return (
     <div className="w-64 bg-gray-50 h-full border-r border-gray-200 flex flex-col">
@@ -38,30 +34,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      {/* Mode Switcher */}
-      <div className="px-4 mb-2">
-        <div className="bg-gray-200 p-1 rounded-lg flex gap-1">
-          <button
-            onClick={() => onModeChange('SSE')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1 text-xs font-medium rounded-md transition-all ${
-              mode === 'SSE' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Zap size={12} />
-            SSE
-          </button>
-          <button
-            onClick={() => onModeChange('WS')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1 text-xs font-medium rounded-md transition-all ${
-              mode === 'WS' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Globe size={12} />
-            WS
-          </button>
-        </div>
-      </div>
-
       {/* Chat History */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-2 space-y-1">
         {conversations.length === 0 ? (
@@ -72,9 +44,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           conversations.sort((a, b) => b.updatedAt - a.updatedAt).map((chat) => (
             <div
               key={chat.id}
-              className={`group flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${
-                activeId === chat.id ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
-              }`}
+              className={`group flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${activeId === chat.id ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
+                }`}
               onClick={() => onSelect(chat.id)}
             >
               <MessageSquare size={14} className="shrink-0" />

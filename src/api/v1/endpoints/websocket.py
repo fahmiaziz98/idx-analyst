@@ -54,38 +54,69 @@ async def websocket_endpoint(
             if not user_message:
                 continue
 
-            chat_service = ChatService()
-            full_response = ""
+            # --- PERSISTENCE LOGIC START ---
+            from src.database.models import MessageRole
+            from src.database.session import AsyncSessionLocal
+            from src.services.messages_service import MessageService
+
+            async with AsyncSessionLocal() as session:
+                message_service = MessageService(session)
+                
+                # 1. Save User Message
+                try:
+                    await message_service.create_message(
+                        conversation_id=conversation_id,
+                        role=MessageRole.USER,
+                        content=user_message
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to save user message: {e}")
+                    # Continue anyway to allow chat to proceed, or handle error
             
-            async for chunk in chat_service.process_stream_chat(
-                messages=user_message, conversation_id=conversation_id
-            ):
-                if chunk["type"] == "message":
-                    full_response += chunk["content"]
-                    await manager.send_json(
-                        {
-                            "type": "message",
-                            "content": chunk["content"],
-                            "conversation_id": conversation_id,
-                            "metadata": {"streaming": True},
-                        },
-                        client_id,
-                    )
-                elif chunk["type"] == "done":
-                     await manager.send_json(
-                        {
-                            "type": "info",
-                            "content": "[DONE]",
-                            "conversation_id": conversation_id,
-                            "metadata": {"streaming": False, "total_length": len(full_response)},
-                        },
-                        client_id,
-                    )
-                elif chunk["type"] == "error":
-                    await manager.send_json(
-                        {"type": "error", "content": json.dumps(chunk.get("data", "Error"))}, 
-                        client_id
-                    )
+                chat_service = ChatService()
+                full_response = ""
+                
+                async for chunk in chat_service.process_stream_chat(
+                    messages=user_message, conversation_id=conversation_id
+                ):
+                    if chunk["type"] == "message":
+                        full_response += chunk["content"]
+                        await manager.send_json(
+                            {
+                                "type": "message",
+                                "content": chunk["content"],
+                                "conversation_id": conversation_id,
+                                "metadata": {"streaming": True},
+                            },
+                            client_id,
+                        )
+                    elif chunk["type"] == "done":
+                         await manager.send_json(
+                            {
+                                "type": "info",
+                                "content": "[DONE]",
+                                "conversation_id": conversation_id,
+                                "metadata": {"streaming": False, "total_length": len(full_response)},
+                            },
+                            client_id,
+                        )
+                    elif chunk["type"] == "error":
+                        await manager.send_json(
+                            {"type": "error", "content": json.dumps(chunk.get("data", "Error"))}, 
+                            client_id
+                        )
+
+                # 2. Save Assistant Message (after full response is generated)
+                if full_response:
+                    try:
+                        await message_service.create_message(
+                            conversation_id=conversation_id,
+                            role=MessageRole.ASSISTANT,
+                            content=full_response
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to save assistant message: {e}")
+            # --- PERSISTENCE LOGIC END ---
 
     except WebSocketDisconnect:
         manager.disconnect(client_id)

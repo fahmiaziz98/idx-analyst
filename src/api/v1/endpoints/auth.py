@@ -1,7 +1,7 @@
 import secrets
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -319,7 +319,7 @@ async def refresh_access_token(
 
         # Check if refresh token is blacklist
         if await blacklist.is_revoked(refresh_token):
-            logger.warning(f"Refresh attempt failed: Token is blacklisted (revoked)")
+            logger.warning("Refresh attempt failed: Token is blacklisted (revoked)")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token revoked",
@@ -342,6 +342,7 @@ async def refresh_access_token(
         # In production, you should fetch this from database
         # For now, we trust the data in the refresh token
         from sqlalchemy import select
+
         from src.database.session import get_db
         
         async for db in get_db():

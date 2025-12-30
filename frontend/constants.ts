@@ -11,6 +11,9 @@ export const AUTH_ENDPOINTS = {
 export const CHAT_ENDPOINTS = {
   STREAM: `${API_BASE_URL}/chat/stream`,
   WEBSOCKET: `ws://localhost:7860/api/v1/ws/chat`,
+  CONVERSATIONS: `${API_BASE_URL}/conversations`,
+  MESSAGES: `${API_BASE_URL}/messages`, // Added new MESSAGES endpoint
+  MESSAGES_BY_CONVERSATION: (conversationId: string) => `${API_BASE_URL}/conversations/${conversationId}/messages`, // Renamed original MESSAGES
 };
 
 export const STORAGE_KEYS = {

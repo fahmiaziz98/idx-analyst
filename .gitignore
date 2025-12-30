@@ -13,6 +13,7 @@ bacaan.md
 migrations/
 generate_secret.py
 .env.production
+docs/
 
 # Distribution / packaging
 .Python

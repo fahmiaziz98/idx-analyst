@@ -126,3 +126,68 @@ export async function logoutApi() {
     window.location.href = '/';
   }
 }
+
+// Conversation API
+import { CHAT_ENDPOINTS } from '../constants';
+import { Conversation, Message } from '../types';
+
+export interface ConversationListResponse {
+  items: Conversation[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export async function getConversations(skip: number = 0, limit: number = 20): Promise<ConversationListResponse> {
+  const response = await apiClient(`${CHAT_ENDPOINTS.CONVERSATIONS}?skip=${skip}&limit=${limit}`);
+  if (!response.ok) throw new Error('Failed to fetch conversations');
+  return response.json();
+}
+
+export async function getConversation(id: string): Promise<Conversation> {
+  const response = await apiClient(`${CHAT_ENDPOINTS.CONVERSATIONS}/${id}`);
+  if (!response.ok) throw new Error('Failed to fetch conversation');
+  return response.json();
+}
+
+export async function createConversation(title?: string): Promise<Conversation> {
+  const response = await apiClient(CHAT_ENDPOINTS.CONVERSATIONS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) throw new Error('Failed to create conversation');
+  return response.json();
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const response = await apiClient(`${CHAT_ENDPOINTS.CONVERSATIONS}/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete conversation');
+}
+
+export async function updateConversationTitle(id: string, title: string): Promise<Conversation> {
+  const response = await apiClient(`${CHAT_ENDPOINTS.CONVERSATIONS}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!response.ok) throw new Error('Failed to update conversation');
+  return response.json();
+}
+
+
+export async function addFeedback(
+  messageId: string,
+  feedback: 'positive' | 'negative',
+  comment?: string
+): Promise<Message> {
+  const response = await apiClient(`${CHAT_ENDPOINTS.MESSAGES}/${messageId}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback, comment }),
+  });
+  if (!response.ok) throw new Error('Failed to submit feedback');
+  return response.json();
+}
