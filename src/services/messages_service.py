@@ -215,3 +215,44 @@ class MessageService:
                 f"Error counting messages for conversation {conversation_id}: {e}"
             )
             raise MessageServiceError("Failed to count conversation messages.") from e
+
+    async def count_messages_by_conversation_ids(
+        self, conversation_ids: list[str]
+    ) -> dict[str, int]:
+        """
+        Count messages for multiple conversations in a single query.
+
+        Args:
+            conversation_ids: List of conversation IDs to count messages for.
+
+        Returns:
+            Dictionary mapping conversation_id to message count.
+
+        Example:
+            counts = await service.count_messages_by_conversation_ids(
+                ["conv-1", "conv-2", "conv-3"]
+            )
+            # Returns: {"conv-1": 5, "conv-2": 10, "conv-3": 3}
+        """
+        if not conversation_ids:
+            return {}
+        
+        try:
+            query = (
+                select(
+                    Message.conversation_id,
+                    func.count(Message.id).label("count")
+                )
+                .where(Message.conversation_id.in_(conversation_ids))
+                .group_by(Message.conversation_id)
+            )
+            
+            result = await self.db.execute(query)
+            return {row[0]: row[1] for row in result.all()}
+            
+        except Exception as e:
+            logger.error(f"Error counting messages by conversation IDs: {e}")
+            raise MessageServiceError(
+                "Failed to count messages for conversations."
+            ) from e
+

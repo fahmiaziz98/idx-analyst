@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database.base import Base
@@ -28,6 +28,16 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
+    # Performance indexes for common queries
+    __table_args__ = (
+        Index(
+            "ix_conversations_user_deleted_updated",
+            "user_id",
+            "is_deleted",
+            "updated_at",
+        ),
+    )
+
     # Foregin Key User
     user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -53,18 +63,20 @@ class Conversation(Base):
 
     # ===== Relationships =====
     # Many conversations belong to one user
+    # lazy="select" - Load on access, use explicit joinedload() when needed
     user: Mapped["User"] = relationship(
         "User",
         back_populates="conversations",
-        lazy="joined",  # Eager load user saat query conversation
+        lazy="select",
     )
 
     # One conversation has many messages
+    # lazy="select" - Prevents N+1 queries, load explicitly when needed
     messages: Mapped[list["Message"]] = relationship(
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",  # Delete messages if conversation deleted
-        lazy="selectin",
+        lazy="select",
         order_by="Message.created_at",  # Messages sorted by timestamp
     )
 

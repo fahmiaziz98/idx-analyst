@@ -103,6 +103,89 @@ class ConversationService:
             logger.error(f"Error retrieving user conversations: {e}")
             raise ConversationServiceError("Failed to retrieve user conversations.") from e
 
+    async def get_user_conversations_with_count(
+        self, user_id: str, skip: int = 0, limit: int = 15
+    ) -> tuple[list[Conversation], dict[str, int], int]:
+        """
+        Retrieve conversations with message counts and total count efficiently.
+
+        Args:
+            user_id: The ID of the user whose conversations are being retrieved.
+            skip: The number of conversations to skip (offset).
+            limit: The maximum number of conversations to return.
+        
+        Returns:
+            Tuple of (conversations, message_counts_dict, total_count):
+            - conversations: List of Conversation objects
+            - message_counts_dict: Dict mapping conversation_id to message count
+            - total_count: Total number of conversations (for pagination)
+        
+        Example:
+            convs, counts, total = await service.get_user_conversations_with_count(
+                user_id="user-123", skip=0, limit=20
+            )
+            # Uses only 2-3 queries instead of 20+ queries!
+        """
+        try:
+            from sqlalchemy import func
+            from src.database.models import Message
+            
+            logger.info(f"Retrieving conversations with counts for user: {user_id}")
+            
+            # Query 1: Get total count
+            count_query = select(func.count(Conversation.id)).where(
+                Conversation.user_id == user_id,
+                Conversation.is_deleted.is_(False)
+            )
+            total_result = await self.db.execute(count_query)
+            total_count = total_result.scalar() or 0
+            
+            # Query 2: Get conversations (paginated)
+            query = (
+                select(Conversation)
+                .where(
+                    Conversation.user_id == user_id,
+                    Conversation.is_deleted.is_(False)
+                )
+                .order_by(Conversation.updated_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            
+            result = await self.db.execute(query)
+            conversations = list(result.scalars().all())
+            
+            if not conversations:
+                return ([], {}, 0)
+            
+            # Query 3: Get message counts for all conversations in ONE query
+            conversation_ids = [conv.id for conv in conversations]
+            message_count_query = (
+                select(
+                    Message.conversation_id,
+                    func.count(Message.id).label("count")
+                )
+                .where(Message.conversation_id.in_(conversation_ids))
+                .group_by(Message.conversation_id)
+            )
+            
+            count_result = await self.db.execute(message_count_query)
+            message_counts = {row[0]: row[1] for row in count_result.all()}
+            
+            logger.info(
+                f"Retrieved {len(conversations)} conversations with counts "
+                f"(total: {total_count}) using 3 efficient queries"
+            )
+            
+            return (conversations, message_counts, total_count)
+            
+        except Exception as e:
+            logger.error(f"Error retrieving conversations with counts: {e}")
+            raise ConversationServiceError(
+                "Failed to retrieve conversations with message counts."
+            ) from e
+
+
 
     async def get_conversation_by_id(
         self, conversation_id: str, user_id: str

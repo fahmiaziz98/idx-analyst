@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database.base import Base
@@ -63,6 +63,15 @@ class Message(Base):
 
     __tablename__ = "messages"
 
+    # Performance indexes for common queries
+    __table_args__ = (
+        Index(
+            "ix_messages_conversation_created",
+            "conversation_id",
+            "created_at",
+        ),
+    )
+
     # Foreign Key
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -92,8 +101,9 @@ class Message(Base):
 
     # Relationships
     # Many messages belong to one conversation
+    # lazy="select" - Load on access, prevents automatic eager loading
     conversation: Mapped["Conversation"] = relationship(
-        "Conversation", back_populates="messages", lazy="joined"
+        "Conversation", back_populates="messages", lazy="select"
     )
 
     # One message has one metric (optional)

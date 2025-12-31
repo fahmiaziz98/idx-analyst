@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import selectinload
 
 from src.api.dependencies import get_conversation_service, get_current_user
 from src.database.models import User
@@ -98,29 +99,28 @@ async def list_conversations(
     }
     ```
     """
-    # Get conversations
-    conversations = await service.get_user_conversations(
+    # ✅ OPTIMIZED: Get conversations with counts efficiently (3 queries total)
+    conversations, message_counts, total = await service.get_user_conversations_with_count(
         user_id=user.id,
         skip=skip,
         limit=limit
     )
     
-    # Build response
-    items = []
-    for conv in conversations:
-        items.append(
-            ConversationResponse(
-                id=conv.id,
-                title=conv.title,
-                message_count=len(conv.messages),  # Count messages
-                created_at=conv.created_at,
-                updated_at=conv.updated_at
-            )
+    # Build response using pre-fetched counts (O(1) lookup, no queries!)
+    items = [
+        ConversationResponse(
+            id=conv.id,
+            title=conv.title,
+            message_count=message_counts.get(conv.id, 0),  # Fast dict lookup
+            created_at=conv.created_at,
+            updated_at=conv.updated_at
         )
+        for conv in conversations
+    ]
     
     return ConversationListResponse(
         items=items,
-        total=len(items),  # TODO: Optimize dengan count query
+        total=total,  # ✅ True total count from database
         skip=skip,
         limit=limit
     )
@@ -167,10 +167,23 @@ async def get_conversation(
     }
     ```
     """
-    conversation = await service.get_conversation_by_id(
-        conversation_id=conversation_id,
-        user_id=user.id
+    # Get conversation with explicit message loading
+    from sqlalchemy import select
+    from src.database.models import Conversation
+    
+    # Use service db session to load with relationships
+    query = (
+        select(Conversation)
+        .options(selectinload(Conversation.messages))  # Explicit eager load
+        .where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+            Conversation.is_deleted.is_(False),
+        )
     )
+    
+    result = await service.db.execute(query)
+    conversation = result.scalar_one_or_none()
     
     if not conversation:
         raise HTTPException(
@@ -271,10 +284,17 @@ async def update_conversation(
             detail="Conversation not found or you don't have access"
         )
     
+    # Efficiently get message count
+    from src.services.messages_service import MessageService
+    message_service = MessageService(service.db)
+    message_count = await message_service.count_messages_in_conversation(
+        conversation_id=conversation_id
+    )
+    
     return ConversationResponse(
         id=conversation.id,
         title=conversation.title,
-        message_count=len(conversation.messages),
+        message_count=message_count,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at
     )

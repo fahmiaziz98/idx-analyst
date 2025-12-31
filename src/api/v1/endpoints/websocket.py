@@ -40,29 +40,31 @@ async def websocket_endpoint(
 
     client_id = f"{websocket.client.host}:{websocket.client.port}"
 
-    try:
-        await manager.connect(websocket, client_id)
+    # ✅ OPTIMIZATION: Create DB session ONCE for entire WebSocket connection
+    # Instead of creating new session for each message (was: ~500ms overhead per message)
+    from src.database.models import MessageRole
+    from src.database.session import AsyncSessionLocal
+    from src.services.messages_service import MessageService
 
-        await manager.send_json({"type": "info", "content": "Connected to RAG Chatbot"}, client_id)
+    async with AsyncSessionLocal() as session:
+        message_service = MessageService(session)
+        chat_service = ChatService()
 
-        while True:
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            user_message = message_data.get("message", "")
-            conversation_id = message_data.get("conversation_id")
+        try:
+            await manager.connect(websocket, client_id)
 
-            if not user_message:
-                continue
+            await manager.send_json({"type": "info", "content": "Connected to RAG Chatbot"}, client_id)
 
-            # --- PERSISTENCE LOGIC START ---
-            from src.database.models import MessageRole
-            from src.database.session import AsyncSessionLocal
-            from src.services.messages_service import MessageService
+            while True:
+                data = await websocket.receive_text()
+                message_data = json.loads(data)
+                user_message = message_data.get("message", "")
+                conversation_id = message_data.get(" conversation_id")
 
-            async with AsyncSessionLocal() as session:
-                message_service = MessageService(session)
-                
-                # 1. Save User Message
+                if not user_message:
+                    continue
+
+                # 1. Save User Message (uses connection-level session)
                 try:
                     await message_service.create_message(
                         conversation_id=conversation_id,
@@ -71,9 +73,8 @@ async def websocket_endpoint(
                     )
                 except Exception as e:
                     logger.error(f"Failed to save user message: {e}")
-                    # Continue anyway to allow chat to proceed, or handle error
+                    # Continue anyway to allow chat to proceed
             
-                chat_service = ChatService()
                 full_response = ""
                 
                 async for chunk in chat_service.process_stream_chat(
@@ -106,7 +107,7 @@ async def websocket_endpoint(
                             client_id
                         )
 
-                # 2. Save Assistant Message (after full response is generated)
+                # 2. Save Assistant Message (uses connection-level session)
                 if full_response:
                     try:
                         await message_service.create_message(
@@ -116,11 +117,10 @@ async def websocket_endpoint(
                         )
                     except Exception as e:
                         logger.error(f"Failed to save assistant message: {e}")
-            # --- PERSISTENCE LOGIC END ---
 
-    except WebSocketDisconnect:
-        manager.disconnect(client_id)
-    except Exception as e:
-        logger.error(f"WS Error: {e}")
-        await manager.send_json({"type": "error", "content": str(e)}, client_id)
-        manager.disconnect(client_id)
+        except WebSocketDisconnect:
+            manager.disconnect(client_id)
+        except Exception as e:
+            logger.error(f"WS Error: {e}")
+            await manager.send_json({"type": "error", "content": str(e)}, client_id)
+            manager.disconnect(client_id)

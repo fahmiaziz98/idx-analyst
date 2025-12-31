@@ -79,11 +79,12 @@ class User(Base):
     # One user has many conversations
     # back_populates: two-way relationship (User <-> Conversation)
     # cascade: if a user is deleted, delete their conversations too (Optional)
+    # lazy="select" - Prevents loading all conversations on every auth check
     conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="select",
     )
 
     def __repr__(self) -> str:
