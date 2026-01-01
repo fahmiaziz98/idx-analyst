@@ -6,7 +6,6 @@ from src.schemas.conversation_schema import FeedbackCreate, MessageListResponse,
 from src.services.conversation_service import ConversationService
 from src.services.messages_service import MessageService
 
-# Router
 router = APIRouter()
 
 
@@ -96,9 +95,6 @@ async def add_feedback(
 ):
     """
     Add feedback ke assistant message.
-    
-    User bisa kasih thumbs up/down + optional comment.
-    
     Security: Verify message belongs to user's conversation.
     
     Example request:

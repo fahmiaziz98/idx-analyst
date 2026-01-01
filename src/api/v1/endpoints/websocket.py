@@ -4,7 +4,9 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from loguru import logger
 
 from src.auth.jwt import verify_token
-
+from src.database.models import MessageRole
+from src.database.session import AsyncSessionLocal
+from src.services.messages_service import MessageService
 from src.services.chat_service import ChatService
 from src.services.websocket_manager import get_connection_manager
 
@@ -39,12 +41,6 @@ async def websocket_endpoint(
         return
 
     client_id = f"{websocket.client.host}:{websocket.client.port}"
-
-    # ✅ OPTIMIZATION: Create DB session ONCE for entire WebSocket connection
-    # Instead of creating new session for each message (was: ~500ms overhead per message)
-    from src.database.models import MessageRole
-    from src.database.session import AsyncSessionLocal
-    from src.services.messages_service import MessageService
 
     async with AsyncSessionLocal() as session:
         message_service = MessageService(session)

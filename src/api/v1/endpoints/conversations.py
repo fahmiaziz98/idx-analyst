@@ -13,7 +13,6 @@ from src.schemas.conversation_schema import (
 )
 from src.services.conversation_service import ConversationService
 
-# Router
 router = APIRouter()
 
 
@@ -47,6 +46,7 @@ async def create_conversation(
     }
     ```
     """
+    # TODO: Automated generate first messages using llm
     title = data.title or "New Conversation"
     
     conversation = await service.create_conversation(
@@ -99,7 +99,6 @@ async def list_conversations(
     }
     ```
     """
-    # ✅ OPTIMIZED: Get conversations with counts efficiently (3 queries total)
     conversations, message_counts, total = await service.get_user_conversations_with_count(
         user_id=user.id,
         skip=skip,
@@ -111,7 +110,7 @@ async def list_conversations(
         ConversationResponse(
             id=conv.id,
             title=conv.title,
-            message_count=message_counts.get(conv.id, 0),  # Fast dict lookup
+            message_count=message_counts.get(conv.id, 0), 
             created_at=conv.created_at,
             updated_at=conv.updated_at
         )
@@ -120,7 +119,7 @@ async def list_conversations(
     
     return ConversationListResponse(
         items=items,
-        total=total,  # ✅ True total count from database
+        total=total,  
         skip=skip,
         limit=limit
     )
@@ -133,7 +132,7 @@ async def get_conversation(
     service: ConversationService = Depends(get_conversation_service),
 ):
     """
-    Get conversation detail dengan semua messages.
+    Get conversation detail all messages.
     
     Example request:
     ```
@@ -167,11 +166,9 @@ async def get_conversation(
     }
     ```
     """
-    # Get conversation with explicit message loading
     from sqlalchemy import select
     from src.database.models import Conversation
     
-    # Use service db session to load with relationships
     query = (
         select(Conversation)
         .options(selectinload(Conversation.messages))  # Explicit eager load
