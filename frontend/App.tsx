@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
+import Modal, { ModalType } from './components/Modal';
 import { User, Conversation, Message } from './types';
 import { CHAT_ENDPOINTS, AUTH_ENDPOINTS } from './constants';
 import {
@@ -23,6 +24,21 @@ const App: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+
+  // Modal State
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type: ModalType;
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    type: 'alert',
+    title: '',
+    message: ''
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -129,7 +145,13 @@ const App: React.FC = () => {
           console.error("WS Backend Error:", data.content);
           setIsStreaming(false);
           // Optional: You could also add a system message to the chat here
-          alert(`Error: ${data.content}`);
+          setModalConfig({
+            isOpen: true,
+            type: 'error',
+            title: 'Connection Error',
+            message: `Error: ${data.content}`,
+            confirmText: 'Dismiss'
+          });
         }
       };
 
@@ -233,17 +255,32 @@ const App: React.FC = () => {
   };
 
   const handleDeleteConversation = async (id: string) => {
-    if (confirm('Are you sure you want to delete this conversation?')) {
-      try {
-        await deleteConversation(id);
-        setConversations(prev => prev.filter(c => c.id !== id));
-        if (activeId === id) {
-          navigate('/chat');
+    setModalConfig({
+      isOpen: true,
+      type: 'confirm',
+      title: 'Delete Conversation',
+      message: 'Are you sure you want to delete this conversation? This action cannot be undone.',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await deleteConversation(id);
+          setConversations(prev => prev.filter(c => c.id !== id));
+          if (activeId === id) {
+            navigate('/chat');
+          }
+        } catch (error) {
+          console.error('Failed to delete conversation', error);
+          setModalConfig({
+            isOpen: true,
+            type: 'error',
+            title: 'Delete Failed',
+            message: 'An error occurred while trying to delete the conversation.',
+          });
+        } finally {
+          setModalConfig(prev => ({ ...prev, isOpen: false }));
         }
-      } catch (error) {
-        console.error('Failed to delete conversation', error);
       }
-    }
+    });
   };
 
   const handleSelectConversation = (id: string) => {
@@ -340,6 +377,16 @@ const App: React.FC = () => {
         onSendMessage={handleSendMessage}
         isStreaming={isStreaming}
         onFeedbackSubmit={handleFeedbackSubmit}
+      />
+
+      <Modal
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        onConfirm={modalConfig.onConfirm}
+        confirmText={modalConfig.confirmText}
+        onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );
