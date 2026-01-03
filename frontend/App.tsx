@@ -125,6 +125,11 @@ const App: React.FC = () => {
           updateStreamingMessage(data.content, data.conversation_id);
         } else if (data.content === '[DONE]') {
           setIsStreaming(false);
+        } else if (data.type === 'error') {
+          console.error("WS Backend Error:", data.content);
+          setIsStreaming(false);
+          // Optional: You could also add a system message to the chat here
+          alert(`Error: ${data.content}`);
         }
       };
 

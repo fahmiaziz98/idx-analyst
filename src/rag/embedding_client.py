@@ -6,7 +6,7 @@ from circuitbreaker import CircuitBreakerError, circuit
 from loguru import logger
 
 from src.core import settings
-from src.core.exception import ServiceMaintenanceError
+from src.core.exception import ServiceMaintenanceError, EmbeddingServiceError
 
 
 class EmbeddingAPIClient:
@@ -89,7 +89,7 @@ class EmbeddingAPIClient:
             self._handle_circuit_error(e, "Embedding Service (Dense)")
         except httpx.HTTPError as e:
             logger.error(f"HTTP Error in dense embedding: {e}")
-            raise e
+            raise EmbeddingServiceError(f"Embedding service error: {str(e)}", details={"error": str(e)}) from e
 
     # === Sparse Embeddings ===
     @circuit(
@@ -130,7 +130,7 @@ class EmbeddingAPIClient:
             self._handle_circuit_error(e, "Embedding Service (Sparse)")
         except httpx.HTTPError as e:
             logger.error(f"HTTP Error in sparse embedding: {e}")
-            raise e
+            raise EmbeddingServiceError(f"Embedding service error: {str(e)}", details={"error": str(e)}) from e
 
     # === Reranking ===
     @circuit(
@@ -178,7 +178,7 @@ class EmbeddingAPIClient:
             self._handle_circuit_error(e, "Reranking Service")
         except httpx.HTTPError as e:
             logger.error(f"HTTP Error in reranking: {e}")
-            raise e
+            raise EmbeddingServiceError(f"Reranking service error: {str(e)}", details={"error": str(e)}) from e
 
     @staticmethod
     def get_circuit_status() -> dict[str, Any]:

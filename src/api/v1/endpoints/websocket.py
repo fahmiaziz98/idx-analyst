@@ -55,7 +55,7 @@ async def websocket_endpoint(
                 data = await websocket.receive_text()
                 message_data = json.loads(data)
                 user_message = message_data.get("message", "")
-                conversation_id = message_data.get(" conversation_id")
+                conversation_id = message_data.get("conversation_id")
 
                 if not user_message:
                     continue
@@ -98,8 +98,10 @@ async def websocket_endpoint(
                             client_id,
                         )
                     elif chunk["type"] == "error":
+                        error_data = chunk.get("data", {})
+                        error_msg = error_data.get("message") or error_data.get("error") or "Unknown error"
                         await manager.send_json(
-                            {"type": "error", "content": json.dumps(chunk.get("data", "Error"))}, 
+                            {"type": "error", "content": str(error_msg), "conversation_id": conversation_id}, 
                             client_id
                         )
 
