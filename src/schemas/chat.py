@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatRequest(BaseModel):
@@ -22,14 +22,15 @@ class ChatRequest(BaseModel):
         description="Optional metadata for additional context.",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "messages": "what is Rag?",
                 "conversation_id": "conv-123",
                 "metadata": {"user_id": "user-456", "timestamp": "2025-10-21T10:30:00"},
             }
         }
+    )
 
 
 class ChatResponse(BaseModel):
@@ -39,14 +40,15 @@ class ChatResponse(BaseModel):
     conversation_id: str | None = Field(None, description="Conversation ID")
     metadata: dict[str, Any] | None = Field(default_factory=dict, description="Additional metadata")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "response": "RAG adalah Retrieval-Augmented Generation...",
                 "conversation_id": "conv-123",
                 "metadata": {"tokens": 150, "timestamp": "2025-10-21T10:30:00"},
             }
         }
+    )
 
 
 class StreamChunk(BaseModel):
@@ -55,13 +57,3 @@ class StreamChunk(BaseModel):
     content: str = Field(..., description="Chunk content")
     done: bool = Field(default=False, description="Is streaming done")
     metadata: dict[str, Any] | None = Field(default_factory=dict, description="Chunk metadata")
-
-
-# class WebSocketMessage(BaseModel):
-#     """WebSocket message schema"""
-
-#     type: str = Field(..., description="Message type: 'message', 'error', 'info'")
-#     content: str = Field(..., description="Message content")
-#     conversation_id: str | None = None
-#     metadata: dict[str, Any] | None = Field(default_factory=dict)
-#     timestamp: datetime = Field(default_factory=datetime.now)

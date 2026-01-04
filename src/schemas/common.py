@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorResponse(BaseModel):
@@ -10,14 +10,15 @@ class ErrorResponse(BaseModel):
     detail: str | None = Field(None, description="Detailed error information")
     timestamp: datetime = Field(default_factory=datetime.now)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error": "Invalid request",
                 "detail": "Message field is required",
                 "timestamp": "2025-10-21T10:30:00",
             }
         }
+    )
 
 
 class HealthResponse(BaseModel):

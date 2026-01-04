@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.database.models import FeedbackType, MessageRole
 
@@ -42,9 +42,7 @@ class MessageResponse(BaseModel):
     feedback_comment: Optional[str] = None
     created_at: datetime
     
-    class Config:
-        """Pydantic config."""
-        from_attributes = True  # Allow init dari ORM model (SQLAlchemy)
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationResponse(BaseModel):
@@ -59,8 +57,7 @@ class ConversationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationDetailResponse(BaseModel):
@@ -76,8 +73,7 @@ class ConversationDetailResponse(BaseModel):
     updated_at: datetime
     messages: List[MessageResponse] = []
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FeedbackCreate(BaseModel):

@@ -109,20 +109,24 @@ async def test_full_chat_flow(db_session, test_user, auth_headers):
     3. List conversations (check message count)
     4. Get conversation detail
     """
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    # Create a client with CSRF cookies to avoid DeprecationWarning
+    csrf_token = "test-csrf-token"
+    cookies = {"csrf_token": csrf_token}
+    
+    async with AsyncClient(
+        transport=ASGITransport(app=app), 
+        base_url="http://test",
+        cookies=cookies
+    ) as ac:
         
         # 1. Create Conversation
         conv_payload = {"title": "Test RAG Chat"}
-        # Add CSRF token to satisfy middleware if not disabled
-        csrf_token = "test-csrf-token"
         headers = {**auth_headers, "X-CSRF-Token": csrf_token}
-        cookies = {"csrf_token": csrf_token}
         
         response = await ac.post(
             "/api/v1/conversations", 
             json=conv_payload, 
-            headers=headers,
-            cookies=cookies
+            headers=headers
         )
         assert response.status_code == 201
         conv_data = response.json()
