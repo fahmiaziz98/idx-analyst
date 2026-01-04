@@ -57,11 +57,11 @@ class StreamChunk(BaseModel):
     metadata: dict[str, Any] | None = Field(default_factory=dict, description="Chunk metadata")
 
 
-class WebSocketMessage(BaseModel):
-    """WebSocket message schema"""
+# class WebSocketMessage(BaseModel):
+#     """WebSocket message schema"""
 
-    type: str = Field(..., description="Message type: 'message', 'error', 'info'")
-    content: str = Field(..., description="Message content")
-    conversation_id: str | None = None
-    metadata: dict[str, Any] | None = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.now)
+#     type: str = Field(..., description="Message type: 'message', 'error', 'info'")
+#     content: str = Field(..., description="Message content")
+#     conversation_id: str | None = None
+#     metadata: dict[str, Any] | None = Field(default_factory=dict)
+#     timestamp: datetime = Field(default_factory=datetime.now)

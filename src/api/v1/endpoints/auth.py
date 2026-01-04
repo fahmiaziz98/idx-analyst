@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import get_current_user
+from src.api.dependencies import get_current_user, get_current_user_full
 from src.auth.jwt import create_token_pair, get_token_remaining_seconds, verify_token
 from src.auth.oauth import oauth
 from src.auth.token_blacklist import TokenBlacklist, get_token_blacklist
@@ -188,16 +188,6 @@ async def oauth_callback(
         # 5. Get redirect url from session
         redirect_url = request.session.pop("redirect_url", settings.FRONTEND_URL)
 
-        # ===== FIXED: Pass token to Streamlit via URL parameter =====
-        # This is required because Streamlit cannot read httponly cookies
-        # For production React app, remove this and use httponly cookies only
-        # separator = "&" if "?" in redirect_url else "?"
-        # redirect_url_with_token = (
-        #     f"{redirect_url}{separator}"
-        #     f"token={token.access_token}&"
-        #     f"refresh_token={token.refresh_token}"
-        # )
-
         # 6. Set secure HTTP-only cookies
         response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 
@@ -205,9 +195,9 @@ async def oauth_callback(
         response.set_cookie(
             key="access_token",
             value=token.access_token,
-            httponly=True,  # Prevent JavaScript access
-            secure=settings.COOKIE_SECURE,  # HTTPS only in production
-            samesite=settings.COOKIE_SAMESITE,  # CSRF protection
+            httponly=True,
+            secure=settings.COOKIE_SECURE,
+            samesite=settings.COOKIE_SAMESITE,
             # domain=security_settings.COOKIE_DOMAIN,
             max_age=settings.jwt_access_token_expire_seconds,
             path="/",
@@ -221,7 +211,7 @@ async def oauth_callback(
             secure=settings.COOKIE_SECURE,
             samesite=settings.COOKIE_SAMESITE,
             # domain=security_settings.COOKIE_DOMAIN,
-            max_age=settings.jwt_refresh_token_expire_seconds,  # 30 days, not 3 minutes!
+            max_age=settings.jwt_refresh_token_expire_seconds, 
             path="/api/v1/auth",  # Restrict to auth endpoints only
         )
 
@@ -246,7 +236,6 @@ async def oauth_callback(
 async def refresh_access_token(
     request: Request,
     response: Response,
-    # user: User = Depends(get_current_user),
     blacklist: TokenBlacklist = Depends(get_token_blacklist),
 ):
     """
@@ -412,7 +401,7 @@ async def refresh_access_token(
 
 # ===== Get Current User =====
 @router.get("/me")
-async def get_me(user: User = Depends(get_current_user)):
+async def get_me(user: User = Depends(get_current_user_full)):
     """
     Get current authenticated user info.
 

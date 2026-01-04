@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = Field(
         default="redis://localhost:6379/0", description="Redis URL for token blacklist and caching"
     )
-    REDIS_MAX_CONNECTIONS: int = Field(default=10)
+    REDIS_MAX_CONNECTIONS: int = Field(default=50)
 
     # Allowed Redirect Domains
     ALLOWED_REDIRECT_DOMAINS: list[str] = Field(

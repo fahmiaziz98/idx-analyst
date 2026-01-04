@@ -4,6 +4,7 @@ src/document_processor/processor.py
 Document processor with continuous ID tracking and append mode.
 """
 
+import asyncio
 import json
 import time
 from datetime import datetime
@@ -325,7 +326,7 @@ class DocumentProcessor:
                     {**chunk, "contextual_text": response.response, "is_header": response.is_header}
                 )
 
-                time.sleep(2)  # Rate limiting
+                await asyncio.sleep(2)  # Rate limiting
 
             return contextual_data
 

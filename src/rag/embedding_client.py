@@ -22,7 +22,10 @@ class EmbeddingAPIClient:
     ):
         self.base_url = base_url
         self.timeout = timeout
-        self.client = httpx.AsyncClient(timeout=self.timeout)
+        self.client = httpx.AsyncClient(
+            timeout=self.timeout,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+        )
 
     async def close(self):
         await self.client.aclose()

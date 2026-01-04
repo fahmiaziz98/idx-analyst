@@ -1,10 +1,12 @@
+import json
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
 
 from src.auth.jwt import verify_token
-from src.auth.token_blacklist import TokenBlacklist, get_token_blacklist
+from src.auth.token_blacklist import TokenBlacklist, get_token_blacklist, get_redis_connection
 from src.database.models import User, UserRole
 from src.database.session import get_db
 from src.services.conversation_service import ConversationService
@@ -63,39 +65,27 @@ async def get_token_from_request(
     return None
 
 
+class StatelessUser:
+    """Minimal user-like object reconstructed from JWT payload."""
+    def __init__(self, id: str, email: str, role: UserRole, name: str = None, avatar_url: str = None):
+        self.id = id
+        self.email = email
+        self.role = role
+        self.name = name or email.split("@")[0]
+        self.avatar_url = avatar_url
+    
+    @property
+    def is_admin(self) -> bool:
+        return self.role == UserRole.ADMIN
+
+
 async def get_current_user(
     request: Request,
-    db: AsyncSession = Depends(get_db),
     blacklist: TokenBlacklist = Depends(get_token_blacklist),
     token: str | None = Depends(get_token_from_request),
-) -> User:
+) -> StatelessUser:
     """
-    Get current authenticated user from JWT token with blacklist checking.
-
-    Security Flow:
-    1. Extract token from Authorization header or cookie
-    2. Verify and decode token
-    3. Check if token is in blacklist (revoked)
-    4. Check if user's all tokens have been revoked
-    5. Get user from database
-    6. Return user object
-
-    Args:
-        request: FastAPI request
-        db: Database session
-        blacklist: Token blacklist service
-        token: JWT token (from header or cookie)
-
-    Returns:
-        User object
-
-    Raises:
-        HTTPException 401: Token invalid, expired, revoked, or user not found
-
-    Example:
-        @app.get("/protected")
-        async def protected_route(user: User = Depends(get_current_user)):
-            return {"user_id": user.id}
+    Get current authenticated user from JWT token without database lookup (Stateless).
     """
     # Check if token is present
     if not token:
@@ -132,28 +122,68 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    # Get user from database
-    result = await db.execute(select(User).where(User.id == token_data.user_id))
-    user = result.scalar_one_or_none()
+    # Return stateless user reconstructed from token claims
+    return StatelessUser(
+        id=token_data.user_id,
+        email=token_data.email,
+        role=UserRole(token_data.role)
+    )
 
-    if not user:
+
+async def get_current_user_full(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: StatelessUser = Depends(get_current_user),
+) -> User:
+    """
+    Get full user object with Redis caching.
+    """
+    redis = await get_redis_connection()
+    cache_key = f"user:cache:{user.id}"
+    
+    try:
+        cached_user = await redis.get(cache_key)
+        if cached_user:
+            user_data = json.loads(cached_user)
+            # Create a detached User object
+            return User(
+                id=user_data["id"],
+                email=user_data["email"],
+                name=user_data["name"],
+                role=UserRole(user_data["role"]),
+                avatar_url=user_data.get("avatar_url")
+            )
+    except Exception as e:
+        logger.warning(f"User cache hit failed: {e}")
+
+    # Cache miss or error, fetch from DB
+    result = await db.execute(select(User).where(User.id == user.id))
+    full_user = result.scalar_one_or_none()
+ 
+    if not full_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Update last_login (optional, for tracking)
-    # Note: this will trigger a database write on every request
-    # If traffic is high, consider updating less frequently
-    # from datetime import datetime
-    # user.last_login = datetime.utcnow()
-    # await db.commit()
+    # Store in Redis
+    try:
+        user_dict = {
+            "id": full_user.id,
+            "email": full_user.email,
+            "name": full_user.name,
+            "role": full_user.role.value if hasattr(full_user.role, "value") else full_user.role,
+            "avatar_url": full_user.avatar_url
+        }
+        await redis.setex(cache_key, 900, json.dumps(user_dict))
+    except Exception as e:
+        logger.warning(f"Failed to cache user: {e}")
 
-    return user
+    return full_user
 
 
-async def require_admin(user: User = Depends(get_current_user)) -> User:
+async def require_admin(user: StatelessUser = Depends(get_current_user)) -> StatelessUser:
     """
     Require admin role for endpoint access.
 
@@ -200,7 +230,7 @@ async def require_role(required_role: UserRole):
         Dependency function that checks for the role
     """
 
-    def wrapper(user: User = Depends(get_current_user)) -> User:
+    def wrapper(user: StatelessUser = Depends(get_current_user)) -> StatelessUser:
         if user.role != required_role:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

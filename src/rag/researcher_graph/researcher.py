@@ -12,6 +12,16 @@ from src.rag.utils import _generate_uuid
 
 from .state import QueryState, ResearcherState
 
+_tavily_client: AsyncTavilyClient | None = None
+
+
+def get_tavily_client() -> AsyncTavilyClient:
+    """Get or create singleton Tavily client."""
+    global _tavily_client
+    if _tavily_client is None:
+        _tavily_client = AsyncTavilyClient(api_key=settings.TAVILY_API_KEY)
+    return _tavily_client
+
 
 async def generate_queries(state: ResearcherState) -> dict[str, list[str]]:
     """
@@ -77,7 +87,7 @@ async def web_search(state: QueryState) -> list[dict[str, Any]]:
         dict[str, list[dict[str, Any]]]: A dictionary with a 'web_results' key containing the list of web search results.
     """
     logger.info(f"Performing web search for query: {state.query}")
-    client = AsyncTavilyClient(api_key=settings.TAVILY_API_KEY)
+    client = get_tavily_client()
     search_results = await client.search(state.query, num_results=1, include_raw_content=False)
 
     format_documents = [
