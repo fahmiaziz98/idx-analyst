@@ -10,3 +10,6 @@ generate-key:
 
 encrypt-key:
 	python3 generate_key.py encrypt
+
+run-test:
+	pytest tests/ -vv
