@@ -53,6 +53,10 @@ class Metric(Base):
         Float, nullable=True, comment="Latency vector database query (ms)"
     )
 
+    reranking_latency_ms: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Latency reranking (ms)"
+    )
+
     total_latency_ms: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -93,5 +97,6 @@ class Metric(Base):
             "llm_latency_ms": self.llm_latency_ms,
             "embedding_latency_ms": self.embedding_latency_ms,
             "vector_query_latency_ms": self.vector_query_latency_ms,
+            "reranking_latency_ms": self.reranking_latency_ms,
             "total_latency_ms": self.total_latency_ms,
         }
