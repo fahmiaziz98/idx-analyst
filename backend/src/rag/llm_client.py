@@ -1,13 +1,13 @@
 import base64
 import io
-from typing import List, Optional, Dict, Any, Union
+from typing import Any
 
 from loguru import logger
-from openai import AsyncOpenAI, APIConnectionError
+from openai import APIConnectionError, AsyncOpenAI
 from PIL import Image
 
 from src.core.config import settings
-from src.core.exception import ValidationError, ParsingError
+from src.core.exception import ParsingError, ValidationError
 
 
 class VLMClient:
@@ -27,7 +27,7 @@ class VLMClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         model_name: str = "Qwen3-VL",
         max_tokens: int = 8192,
         temperature: float = 1.5,
@@ -60,7 +60,7 @@ class VLMClient:
         try:
             self.client = AsyncOpenAI(
                 base_url=self.base_url,
-                api_key="EMPTY",  
+                api_key="EMPTY",
                 timeout=timeout,
                 max_retries=3,
             )
@@ -84,9 +84,9 @@ class VLMClient:
 
     async def generate(
         self,
-        messages: List[Dict[str, Any]],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        messages: list[dict[str, Any]],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """
         Generate text response from a list of messages.
@@ -121,8 +121,8 @@ class VLMClient:
         image: Image.Image,
         system_prompt: str,
         user_prompt: str,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """
         Generate text response from an image and prompts.
@@ -157,7 +157,7 @@ class VLMClient:
 
         return await self.generate(messages, temperature, max_tokens)
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """
         Retrieve client configuration metadata.
 

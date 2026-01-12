@@ -1,84 +1,119 @@
+import io
 from pathlib import Path
 
 import fitz
-from llama_cloud_services import LlamaParse
 from loguru import logger
+from PIL import Image
 
 from src.core.exception import ParsingError, ValidationError
+from src.document_processor.pipeline.prompt import (
+    PARSER_SYSTEM_PROMPT,
+    PARSER_USER_PROMPT,
+)
+from src.rag.llm_client import VLMClient
 
 
 class DocumentParser:
     """
-    PDF parser using LlamaParse with support for page extraction.
+    PDF parser using VLM for document-to-markdown conversion.
 
-    This class handles:
-    - PDF validation
-    - Page range extraction (creates temporary files)
-    - Document parsing to markdown format
-    - Cleanup of temporary files
+    This class provides:
+    - PDF validation and page count retrieval
+    - Page range extraction as PIL Images
+    - Async document parsing to markdown using VLM
 
     Attributes:
-        parser: LlamaParse instance
-        api_key: LlamaParse API key
+        parser: VLMClient instance for VLM inference.
+
+    Example:
+        >>> parser = DocumentParser()
+        >>> markdown_pages = await parser.parse_pdf("report.pdf", start_page=1, end_page=5)
     """
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        temperature: float = 1.5,
+        min_p: float = 0.1,
+        max_tokens: int = 8192,
+    ) -> None:
         """
-        Initialize the document parser.
+        Initialize the document parser with VLM configuration.
 
         Args:
-            api_key: LlamaParse API key
+            temperature: Sampling temperature for VLM generation. Higher values
+                produce more creative output. Defaults to 1.5.
+            min_p: Minimum probability threshold for nucleus sampling.
+                Defaults to 0.1.
+            max_tokens: Maximum tokens for VLM response. Defaults to 8192.
 
         Raises:
-            ValidationError: If API key is invalid
+            ParsingError: If VLMClient initialization fails.
         """
-        if not api_key:
-            raise ValidationError("API key is required")
         try:
-            logger.info("Initializing LlamaParse...")
-            self.parser = LlamaParse(
-                api_key=api_key,
-                num_workers=4,
-                model="openai-gpt-4o-mini",
-                invalidate_cache=False,
-                parse_mode="parse_page_with_agent",
-                language="en",
-                adaptive_long_table=True,
-                outlined_table_extraction=True,
-                high_res_ocr=True,
-                precise_bounding_box=True,
-                hide_footers=True,
-                system_prompt_append="""
-                    Parse the PDF financial report carefully.
-                    Focus on extracting tables with financial data (e.g., balance sheets, income statements) in markdown format.
-                    Preserve structures like columns for notes and years, currencies (Rp, USD), and units (million, billion, and trillion). 
-                    Handle mixed English-Indonesian text: Translate key Indonesian terms to English if ambiguous (e.g., 'total aset' to 'total assets').
-                    Ignore irrelevant sections like disclaimers unless they contain tables.
-                """,
+            logger.info("Initializing VLMClient...")
+            self.parser = VLMClient(
+                max_tokens=max_tokens,
+                min_p=min_p,
+                temperature=temperature,
             )
-            logger.success("LlamaParse initialized successfully")
+            logger.success("VLMClient initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize LlamaParse: {str(e)}")
-            raise ParsingError(f"Failed to initialize LlamaParse: {str(e)}") from e
+            logger.error(f"Failed to initialize VLMClient: {e}")
+            raise ParsingError(f"Failed to initialize VLMClient: {e}") from e
+
+    @staticmethod
+    def _extract_markdown(text: str) -> str:
+        """
+        Extract markdown content from code block wrappers.
+
+        VLMs often wrap output in ```markdown ... ``` blocks.
+        This method strips those wrappers to get clean markdown.
+
+        Args:
+            text: Raw text that may contain markdown code block wrappers.
+
+        Returns:
+            Clean markdown text without code block wrappers.
+
+        Example:
+            >>> DocumentParser._extract_markdown("```markdown\\n# Title\\n```")
+            '# Title'
+        """
+        text = text.strip()
+
+        # Check for ```markdown or ```md at the start
+        if text.startswith("```markdown"):
+            text = text[len("```markdown") :]
+        elif text.startswith("```md"):
+            text = text[len("```md") :]
+        elif text.startswith("```"):
+            text = text[3:]
+
+        # Remove trailing ```
+        if text.endswith("```"):
+            text = text[:-3]
+
+        return text.strip()
 
     def validate_pdf(self, pdf_path: str) -> Path:
         """
-        Validate PDF file exists and is readable.
+        Validate that a PDF file exists and is readable.
 
         Args:
-            pdf_path: Path to PDF file
+            pdf_path: Path to the PDF file.
 
         Returns:
-            Path object for the PDF file
+            Validated Path object for the PDF file.
 
         Raises:
-            ValidationError: If file doesn't exist or is not a PDF
+            ValidationError: If file doesn't exist, is not a PDF,
+                or is corrupted/unreadable.
         """
         path = Path(pdf_path)
 
         if not path.exists():
             raise ValidationError(f"File does not exist: {pdf_path}")
-        if path.suffix != ".pdf":
+        if path.suffix.lower() != ".pdf":
             raise ValidationError(f"File is not a PDF: {pdf_path}")
 
         try:
@@ -86,142 +121,22 @@ class DocumentParser:
                 page_count = len(doc)
                 logger.debug(f"PDF validated: {path.name} ({page_count} pages)")
         except Exception as e:
-            raise ValidationError(f"Invalid or corrupted PDF: {str(e)}") from e
+            raise ValidationError(f"Invalid or corrupted PDF: {e}") from e
 
         return path
 
-    def extract_page_range(self, pdf_path: str, start_page: int, end_page: int) -> tuple[str, str]:
-        """
-        Extract a specific page range from PDF.
-
-        Creates a temporary PDF file with only the specified pages.
-        Caller is responsible for cleaning up the temporary file.
-
-        Args:
-            pdf_path: Path to original PDF file
-            start_page: Starting page number (1-indexed, inclusive)
-            end_page: Ending page number (1-indexed, inclusive)
-
-        Returns:
-            Tuple of (temp_file_path, original_file_path)
-
-        Raises:
-            ValidationError: If page range is invalid
-            ParsingError: If extraction fails
-        """
-        pdf_path_obj = self.validate_pdf(pdf_path)
-
-        try:
-            with fitz.open(str(pdf_path_obj)) as doc:
-                total_pages = len(doc)
-
-                # Validate page range
-                if start_page < 1 or end_page < 1:
-                    raise ValidationError(
-                        f"Page numbers must be >= 1 (got {start_page}-{end_page})"
-                    )
-
-                if start_page > end_page:
-                    raise ValidationError(
-                        f"start_page ({start_page}) must be <= end_page ({end_page})"
-                    )
-
-                if end_page > total_pages:
-                    raise ValidationError(
-                        f"end_page ({end_page}) exceeds total pages ({total_pages})"
-                    )
-
-                # Create temporary file
-                temp_filename = f"temp_{pdf_path_obj.stem}_{start_page}_{end_page}.pdf"
-                temp_path = Path.cwd() / temp_filename
-
-                logger.info(f"Extracting pages {start_page}-{end_page} from {pdf_path_obj.name}")
-
-                # Extract pages (convert to 0-indexed)
-                new_doc = fitz.open()
-                for page_num in range(start_page - 1, end_page):
-                    new_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
-
-                new_doc.save(str(temp_path))
-                new_doc.close()
-
-                logger.success(f"Created temporary file: {temp_path.name}")
-                return str(temp_path), str(pdf_path_obj)
-
-        except ValidationError:
-            raise
-        except Exception as e:
-            raise ParsingError(f"Failed to extract page range: {str(e)}") from e
-
-    async def parse_pdf(
-        self, pdf_path: str, start_page: int | None = None, end_page: int | None = None
-    ) -> tuple[list, str]:
-        """
-        Parse PDF to markdown documents.
-
-        If page range is specified, creates a temporary file first.
-        Returns markdown documents split by page.
-
-        Args:
-            pdf_path: Path to PDF file
-            start_page: Optional starting page (1-indexed)
-            end_page: Optional ending page (1-indexed)
-
-        Returns:
-            Tuple of (markdown_documents, original_file_path)
-            Each markdown document has .text and .metadata attributes
-
-        Raises:
-            ParsingError: If parsing fails
-            ValidationError: If inputs are invalid
-        """
-        # Validate input
-        original_path = self.validate_pdf(pdf_path)
-        temp_file = None
-
-        try:
-            # Extract page range if specified
-            if start_page is not None and end_page is not None:
-                temp_file, original_file = self.extract_page_range(pdf_path, start_page, end_page)
-                file_to_parse = temp_file
-            else:
-                file_to_parse = str(original_path)
-                original_file = str(original_path)
-
-            # Parse with LlamaParse
-            logger.info(f"Parsing document: {Path(file_to_parse).name}")
-
-            try:
-                result = await self.parser.aparse(file_to_parse)
-                markdown_docs = result.get_markdown_documents(split_by_page=True)
-
-                logger.success(f"Parsed {len(markdown_docs)} pages successfully")
-                return markdown_docs, original_file
-
-            except Exception as e:
-                raise ParsingError(f"LlamaParse failed: {str(e)}") from e
-
-        finally:
-            # Clean up temporary file
-            if temp_file and Path(temp_file).exists():
-                try:
-                    Path(temp_file).unlink()
-                    logger.debug(f"Cleaned up temporary file: {temp_file}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up temp file: {e}")
-
     def get_page_count(self, pdf_path: str) -> int:
         """
-        Get the number of pages in a PDF file.
+        Get the total number of pages in a PDF file.
 
         Args:
-            pdf_path: Path to PDF file
+            pdf_path: Path to the PDF file.
 
         Returns:
-            Number of pages in the PDF file
+            Number of pages in the PDF.
 
         Raises:
-            ValidationError: If file doesn't exist or is not a PDF
+            ValidationError: If file is invalid or unreadable.
         """
         pdf_path_obj = self.validate_pdf(pdf_path)
 
@@ -229,4 +144,147 @@ class DocumentParser:
             with fitz.open(str(pdf_path_obj)) as doc:
                 return len(doc)
         except Exception as e:
-            raise ValidationError(f"Failed to get page count: {str(e)}") from e
+            raise ValidationError(f"Failed to get page count: {e}") from e
+
+    def extract_pages_as_images(
+        self,
+        pdf_path: str,
+        start_page: int = 1,
+        end_page: int | None = None,
+        scale: float = 4.0,
+    ) -> list[Image.Image]:
+        """
+        Extract PDF pages as high-resolution PIL Images.
+
+        Converts each page to a PNG image at the specified scale factor.
+        Useful for VLM processing where image quality affects accuracy.
+
+        Args:
+            pdf_path: Path to the PDF file.
+            start_page: First page to extract (1-indexed, inclusive). Defaults to 1.
+            end_page: Last page to extract (1-indexed, inclusive).
+                Defaults to None (last page of document).
+            scale: Resolution scale factor. 4.0 = 4x native resolution.
+                Higher values produce clearer images but use more memory.
+                Defaults to 4.0.
+
+        Returns:
+            List of PIL Image objects, one per extracted page.
+
+        Raises:
+            ValidationError: If page range is invalid.
+            ParsingError: If image extraction fails.
+
+        Example:
+            >>> images = parser.extract_pages_as_images("report.pdf", 1, 5)
+            >>> len(images)
+            5
+        """
+        pdf_path_obj = self.validate_pdf(pdf_path)
+        images: list[Image.Image] = []
+
+        try:
+            with fitz.open(str(pdf_path_obj)) as pdf_document:
+                total_pages = len(pdf_document)
+
+                # Default end_page to last page
+                actual_end_page = end_page if end_page is not None else total_pages
+
+                # Validate page range
+                if start_page < 1:
+                    raise ValidationError(f"start_page must be >= 1 (got {start_page})")
+
+                if actual_end_page < start_page:
+                    raise ValidationError(
+                        f"end_page ({actual_end_page}) must be >= start_page ({start_page})"
+                    )
+
+                if actual_end_page > total_pages:
+                    raise ValidationError(
+                        f"end_page ({actual_end_page}) exceeds total pages ({total_pages})"
+                    )
+
+                logger.info(
+                    f"Extracting pages {start_page}-{actual_end_page} from {pdf_path_obj.name}"
+                )
+
+                # Extract pages (convert to 0-indexed for PyMuPDF)
+                matrix = fitz.Matrix(scale, scale)
+                for page_num in range(start_page - 1, actual_end_page):
+                    page = pdf_document[page_num]
+                    pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+
+                    img_data = pixmap.tobytes("png")
+                    img = Image.open(io.BytesIO(img_data))
+                    images.append(img)
+
+                logger.success(f"Extracted {len(images)} page(s) as images")
+                return images
+
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise ParsingError(f"Failed to extract pages: {e}") from e
+
+    async def parse_pdf(
+        self,
+        pdf_path: str,
+        start_page: int = 1,
+        end_page: int | None = None,
+    ) -> list[str]:
+        """
+        Parse PDF pages to markdown using VLM.
+
+        Extracts specified pages as images and sends each to the VLM
+        for conversion to markdown format.
+
+        Args:
+            pdf_path: Path to the PDF file.
+            start_page: First page to parse (1-indexed). Defaults to 1.
+            end_page: Last page to parse (1-indexed).
+                Defaults to None (last page of document).
+
+        Returns:
+            List of markdown strings, one per page.
+
+        Raises:
+            ValidationError: If inputs are invalid.
+            ParsingError: If VLM parsing fails.
+
+        Example:
+            >>> markdown_pages = await parser.parse_pdf("report.pdf", 1, 3)
+            >>> print(markdown_pages[0])  # First page as markdown
+        """
+        # Validate and get page count
+        self.validate_pdf(pdf_path)
+        total_pages = self.get_page_count(pdf_path)
+        actual_end_page = end_page if end_page is not None else total_pages
+
+        logger.info(f"Parsing {Path(pdf_path).name} (pages {start_page}-{actual_end_page})")
+
+        # Extract pages as images
+        images = self.extract_pages_as_images(
+            pdf_path,
+            start_page=start_page,
+            end_page=actual_end_page,
+        )
+
+        # Parse each page with VLM
+        markdown_pages: list[str] = []
+        for idx, img in enumerate(images, start=start_page):
+            try:
+                logger.debug(f"Parsing page {idx}...")
+                markdown = await self.parser.generate_with_image(
+                    image=img,
+                    system_prompt=PARSER_SYSTEM_PROMPT,
+                    user_prompt=PARSER_USER_PROMPT,
+                )
+                clean_markdown = self._extract_markdown(markdown)
+                markdown_pages.append(clean_markdown)
+                logger.debug(f"Page {idx} parsed successfully")
+
+            except Exception as e:
+                raise ParsingError(f"VLM parsing failed on page {idx}: {e}") from e
+
+        logger.success(f"Parsed {len(markdown_pages)} page(s) successfully")
+        return markdown_pages
