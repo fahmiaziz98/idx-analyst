@@ -105,6 +105,8 @@ class Settings(BaseSettings):
     DATA_PATH: str = "data/COMBINED_DATA.json"
     TOTAL_DOCUMENTS: int = 0
 
+    VLLM_API_KEY: str | None = None
+    VLLM_ENDPOINT: str | None = None
     COHERE_API_KEY: str | None = None
     TAVILY_API_KEY: str | None = None
     LLAMA_PARSE_KEY: str | None = None

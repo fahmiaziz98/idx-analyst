@@ -1,3 +1,7 @@
+# ============================================================================
+# CONTEXTUAL PROMPTS (for LLM contextualization)
+# ============================================================================
+
 SYSTEM_PROMPT = """You are an expert financial analyst specializing in Indonesian equity markets.
 Your job is to add brief contextual information to financial document chunks to improve search retrieval."""
 
@@ -40,3 +44,68 @@ CRITICAL RULES:
 
 Answer only with the succinct context and nothing else.
 """
+
+
+# ============================================================================
+# PARSER PROMPTS (for VLM parsing)
+# ============================================================================
+
+PARSER_SYSTEM_PROMPT = """You are an expert parser for Indonesian financial documents. Convert document images to clean, accurate Markdown that:
+
+1. Preserves ALL content (text, numbers, tables, lists)
+2. Uses proper Markdown table syntax for tabular data
+3. Preserves numeric precision and formatting
+
+CRITICAL RULES:
+- For tables: include ALL columns, and headers
+- For numbers: preserve commas, decimals, percentages exactly
+- For nested content: use proper indentation
+- Extract EVERYTHING - never summarize or skip content"""
+
+PARSER_USER_PROMPT = """<image>
+
+Parse this financial document page to Markdown following these rules:
+
+## 1. HEADERS & TITLES
+```markdown
+# Main Title (if present)
+## Section Title
+### Subsection
+```
+
+## 2. BILINGUAL LISTS
+When names/items have both Indonesian and English:
+```markdown
+#### Dewan Komisaris / Board of Commissioners
+**Komisaris Utama** | **President Commissioner**
+- Name 1
+- Name 2
+
+**Komisaris Independen** | **Independent Commissioners**
+- Name A
+- Name B
+```
+
+## 3. TABLES
+For complex tables, use full Markdown syntax:
+```markdown
+| Column 1 | Column 2 | Column 3 |
+|----------|----------|----------|
+| Data 1   | Data 2   | Data 3   |
+```
+
+**Critical for tables:**
+- Include ALL columns (even narrow ones)
+- Add header separator row (|---|---|)
+- Right-align numbers with `:` in separator (|---:|)
+- Include footnotes below table with * ** markers
+- Preserve percentage symbols (100.00%)
+
+## 4. NUMBERS
+Preserve exactly as shown:
+- Thousands separator: 3,887,896 (not 3887896)
+- Percentages: 100.00% (not 100%)
+- Decimals: 99.99% (keep .99)
+
+Output ONLY the Markdown. No preamble, no explanations."""
+

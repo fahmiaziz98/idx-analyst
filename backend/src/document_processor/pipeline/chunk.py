@@ -51,10 +51,8 @@ class DocumentChunker:
         self.header_max_tokens = header_max_tokens
         self.min_tokens = min_tokens
 
-        # Initialize tokenizer
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
-        # Initialize text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -99,7 +97,6 @@ class DocumentChunker:
             logger.debug(f"Parsing markdown ({len(lines)} lines)")
 
             for line in lines:
-                # Skip empty lines (except in tables)
                 if not line.strip():
                     if current_buffer and not in_table:
                         elements.append(
@@ -111,10 +108,8 @@ class DocumentChunker:
                         current_type = None
                     continue
 
-                # Detect table rows (at least 3 pipes)
                 if "|" in line and line.count("|") >= 3:
                     if not in_table:
-                        # Start new table
                         if current_buffer:
                             elements.append(
                                 DocumentElement(
@@ -125,11 +120,9 @@ class DocumentChunker:
                         current_type = "table"
                         in_table = True
                     else:
-                        # Continue table
                         current_buffer.append(line)
                     continue
 
-                # End of table
                 if in_table:
                     elements.append(
                         DocumentElement(element_type="table", content="\n".join(current_buffer))
@@ -138,15 +131,12 @@ class DocumentChunker:
                     current_type = None
                     in_table = False
 
-                # Detect line type
                 line_type = self._detect_line_type(line)
 
-                # Accumulate lines of same type
                 if current_type in (None, line_type):
                     current_buffer.append(line)
                     current_type = line_type
                 else:
-                    # Type changed, save current buffer
                     elements.append(
                         DocumentElement(
                             element_type=current_type, content="\n".join(current_buffer)
@@ -155,7 +145,6 @@ class DocumentChunker:
                     current_buffer = [line]
                     current_type = line_type
 
-            # Flush remaining buffer
             if current_buffer:
                 elements.append(
                     DocumentElement(
@@ -163,7 +152,6 @@ class DocumentChunker:
                     )
                 )
 
-            # Log statistics
             type_counts = {}
             for elem in elements:
                 type_counts[elem.element_type] = type_counts.get(elem.element_type, 0) + 1
