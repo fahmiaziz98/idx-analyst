@@ -1,10 +1,11 @@
 import asyncio
+from typing import Any
 
 from loguru import logger
-from openai import AsyncOpenAI
 
 from src.core.exception import ContextualizationError, ValidationError
 from src.document_processor.pipeline.prompt import SYSTEM_PROMPT, TABLE_PROMPT
+from src.rag.llm_client import VLMClient
 
 RETRY_DELAY = 1.0  # Seconds between retries
 
@@ -14,59 +15,86 @@ class TableContextualizer:
     LLM-based contextualizer for financial tables.
 
     This class handles:
-    - OpenAI-compatible API integration (Groq, OpenRouter, etc.)
-    - Rate limiting between requests
-    - Retry logic for failed API calls
     - Context generation specifically for tables
+    - Retry logic with exponential backoff for failed API calls
+    - Batch processing of document chunks
 
     Only tables are contextualized (not text/headers) to reduce API costs
-    and focus on structured financial data.
+    and focus on structured financial data which benefits most from context.
 
     Attributes:
-        client: Async OpenAI client
-        model: LLM model name
-        delay: Seconds to wait between API calls
-        max_retries: Maximum retry attempts for failed calls
+        client: VLM client instance for LLM inference.
+        model: LLM model name.
+        max_retries: Maximum retry attempts for failed calls.
     """
 
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "https://api.groq.com/openai/v1",
-        model: str = "moonshotai/kimi-k2-instruct-0905",
-        delay: float = 2,
+        model: str = "Qwen3-VL",
+        temperature: float = 1.0,
+        max_tokens: int = 4096,
+        min_p: float = 0.1,
         max_retries: int = 3,
-    ):
+    ) -> None:
         """
         Initialize the table contextualizer.
 
         Args:
-            api_key: OpenAI-compatible API key
-            base_url: API base URL (default: Groq endpoint)
-            model: Model name (default: deepseek-chat via Groq)
-            delay: Seconds between API calls (default: 2.0)
-            max_retries: Max retry attempts (default: 3)
+            model: LLM model name. Defaults to "Qwen3-VL".
+            temperature: LLM sampling temperature. Defaults to 1.0.
+            max_tokens: Maximum tokens for generation. Defaults to 4096.
+            min_p: Minimum probability for nucleus sampling. Defaults to 0.1.
+            max_retries: Max retry attempts for failed API calls. Defaults to 3.
 
         Raises:
-            ValidationError: If client initialization fails
+            ValidationError: If VLMClient initialization fails.
         """
-        if not api_key:
-            raise ValidationError("API key is required for contextualization")
-
         self.model = model
-        self.delay = delay
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.min_p = min_p
         self.max_retries = max_retries
-        self.SYSTEM_PROMPT = SYSTEM_PROMPT
-        self.USER_PROMPT = TABLE_PROMPT
+        self.system_prompt = SYSTEM_PROMPT
+        self.user_prompt = TABLE_PROMPT
 
         try:
-            # Use async client for better performance
-            self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
-            logger.info(f"Initialized contextualizer with model: {model}")
-            logger.debug(f"API endpoint: {base_url}")
-
+            self.client = VLMClient(
+                model_name=self.model,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                min_p=self.min_p,
+            )
+            logger.info(f"Initialized contextualizer with model: {self.model}")
         except Exception as e:
-            raise ValidationError(f"Failed to initialize OpenAI client: {str(e)}") from e
+            logger.error(f"Failed to initialize VLM client: {e}")
+            raise ValidationError(f"Failed to initialize VLM client: {e}") from e
+
+    @staticmethod
+    def _extract_markdown(text: str) -> str:
+        """
+        Extract markdown content from code block wrappers.
+
+        Args:
+            text: Raw text that may contain markdown code block wrappers.
+
+        Returns:
+            Clean markdown text.
+        """
+        text = text.strip()
+
+        # Check for ```markdown or ```md at the start
+        if text.startswith("```markdown"):
+            text = text[len("```markdown") :]
+        elif text.startswith("```md"):
+            text = text[len("```md") :]
+        elif text.startswith("```"):
+            text = text[3:]
+
+        # Remove trailing ```
+        if text.endswith("```"):
+            text = text[:-3]
+
+        return text.strip()
 
     async def contextualize_table(
         self, table_text: str, full_document: str, retry_count: int = 0
@@ -74,103 +102,96 @@ class TableContextualizer:
         """
         Generate contextual information for a financial table.
 
-        Uses LLM to analyze the table in context of the full document
-        and generate a 4-6 sentence summary with key financial metrics.
+        Uses LLM to analyze the table in the context of the full document
+        and generate a summary with key financial metrics.
 
         Args:
-            table_text: The table content (markdown format)
-            full_document: Full document text for context
-            retry_count: Current retry attempt (internal use)
+            table_text: The table content (markdown format).
+            full_document: Full document text for context.
+            retry_count: Current retry attempt (internal use).
 
         Returns:
-            Contextualized text describing the table
+            Contextualized description of the table.
 
         Raises:
-            ContextualizationError: If contextualization fails after retries
-            APIError: If API call fails
+            ContextualizationError: If generation fails or result is too short.
         """
         if not table_text.strip():
             raise ContextualizationError("Empty table text provided")
 
         try:
             # Format prompt
-            user_message = self.USER_PROMPT.format(chunk=table_text, document=full_document)
+            user_message = self.user_prompt.format(
+                chunk=table_text, document=full_document
+            )
 
             # Call LLM
             logger.debug(f"Calling {self.model} for table contextualization")
-
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await self.client.generate(
                 messages=[
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_message},
-                ],
-                temperature=0.2,
-                max_tokens=4096,
+                ]
             )
 
-            # Extract content
-            contextualized = response.choices[0].message.content
+            # Extract and clean
+            clean_response = self._extract_markdown(response)
 
-            if not contextualized or len(contextualized.strip()) < 50:
+            if not clean_response or len(clean_response) < 50:
                 raise ContextualizationError(
-                    f"Generated context too short: {len(contextualized)} chars"
+                    f"Generated context too short: {len(clean_response)} chars"
                 )
 
-            logger.debug(f"Generated {len(contextualized)} chars of context")
-
-            # Rate limiting
-            await asyncio.sleep(self.delay)
-
-            return contextualized.strip()
+            logger.debug(f"Generated {len(clean_response)} chars of context")
+            return clean_response
 
         except ContextualizationError:
             raise
-
         except Exception as e:
-            # Retry logic
+            # Retry logic with exponential backoff
             if retry_count < self.max_retries:
+                wait_time = RETRY_DELAY * (retry_count + 1)
                 logger.warning(
-                    f"Contextualization failed (attempt {retry_count + 1}/{self.max_retries}): {e}"
+                    f"Contextualization failed (attempt {retry_count + 1}/"
+                    f"{self.max_retries}), retrying in {wait_time}s: {e}"
                 )
-                await asyncio.sleep(RETRY_DELAY * (retry_count + 1))  # Exponential backoff
+                await asyncio.sleep(wait_time)
+                return await self.contextualize_table(
+                    table_text, full_document, retry_count + 1
+                )
 
-                return await self.contextualize_table(table_text, full_document, retry_count + 1)
-            else:
-                # Max retries exceeded
-                error_msg = f"Failed after {self.max_retries} retries: {str(e)}"
-                logger.error(error_msg)
-                raise ContextualizationError(error_msg) from e
+            error_msg = f"Failed to contextualize table after {self.max_retries} retries: {e}"
+            logger.error(error_msg)
+            raise ContextualizationError(error_msg) from e
 
     async def contextualize_batch(
-        self, chunks: list, full_document: str, show_progress: bool = True
-    ) -> list:
+        self,
+        chunks: list[dict[str, Any]],
+        full_document: str,
+        show_progress: bool = True,
+    ) -> list[dict[str, Any]]:
         """
         Contextualize multiple chunks (tables only).
 
-        Processes chunks sequentially with rate limiting.
-        Only tables are contextualized; text chunks are passed through unchanged.
-
         Args:
-            chunks: List of chunk dictionaries (must have "content" and "type" keys)
-            full_document: Full document text for context
-            show_progress: Whether to show progress logs
+            chunks: List of chunk dictionaries (must have "content" and "type" keys).
+            full_document: Full document text for context.
+            show_progress: Whether to show progress logs.
 
         Returns:
-            List of chunks with contextualized_content field added
-
-        Raises:
-            ContextualizationError: If batch processing fails
+            List of chunks with 'contextualized_content' field added.
         """
         if not chunks:
             raise ContextualizationError("No chunks provided for contextualization")
 
-        # Count tables
-        table_count = sum(1 for c in chunks if c.get("type") == "table")
+        # Count tables for logging
+        table_chunks = [c for c in chunks if c.get("type") == "table"]
+        table_count = len(table_chunks)
 
-        logger.info(f"Contextualizing {table_count} tables out of {len(chunks)} total chunks")
+        logger.info(
+            f"Contextualizing {table_count} tables out of {len(chunks)} total chunks"
+        )
 
-        contextualized_chunks = []
         processed_tables = 0
         failed_tables = 0
 
@@ -178,76 +199,69 @@ class TableContextualizer:
             chunk_type = chunk.get("type", "text")
             content = chunk.get("content", "")
 
-            # Only contextualize tables
             if chunk_type == "table":
                 try:
+                    processed_tables += 1
                     if show_progress:
                         logger.info(
-                            f"Contextualizing table {processed_tables + 1}/{table_count}..."
+                            f"Processing table {processed_tables}/{table_count}..."
                         )
 
-                    contextualized = await self.contextualize_table(content, full_document)
-
+                    contextualized = await self.contextualize_table(
+                        content, full_document
+                    )
                     chunk["contextualized_content"] = contextualized
-                    processed_tables += 1
 
                 except Exception as e:
-                    logger.error(f"Failed to contextualize chunk {i}: {e}")
-                    chunk["contextualized_content"] = content  # Fallback to original
+                    logger.error(f"Failed to contextualize table chunk {i}: {e}")
+                    chunk["contextualized_content"] = content  # Fallback
                     failed_tables += 1
             else:
-                # Text/headers: use original content
+                # Non-table content is passed through unchanged
                 chunk["contextualized_content"] = content
 
-            contextualized_chunks.append(chunk)
-
-        # Summary
+        # Summary logging
         if table_count > 0:
-            success_rate = (processed_tables / table_count) * 100
+            success_count = processed_tables - failed_tables
+            success_rate = (success_count / table_count) * 100
             logger.success(
-                f"Contextualization complete: {processed_tables}/{table_count} tables succeeded "
-                f"({success_rate:.1f}%)"
+                f"Contextualization complete: {success_count}/{table_count} tables "
+                f"succeeded ({success_rate:.1f}%)"
             )
-
             if failed_tables > 0:
                 logger.warning(f"{failed_tables} tables failed (using original content)")
 
-        return contextualized_chunks
+        return chunks
 
-    def close(self):
-        """
-        Close the API client connection.
-
-        Should be called when done processing to clean up resources.
-        """
-        try:
-            # AsyncOpenAI doesn't require explicit closing in most cases
-            # but we log it for clarity
-            logger.debug("Closing contextualizer client")
-        except Exception as e:
-            logger.warning(f"Error closing client: {e}")
+    async def close(self) -> None:
+        """Close the underlying VLM client connection."""
+        if hasattr(self.client, "client"):
+            await self.client.client.close()
+        logger.debug("Contextualizer client closed")
 
 
 class NoOpContextualizer:
     """
-    No-op contextualizer that passes through content unchanged.
-
-    Used when contextualization is disabled to maintain consistent interface.
+    No-op contextualizer that returns original content unchanged.
     """
 
-    def __init__(self):
-        logger.info("Using no-op contextualizer (no LLM calls)")
+    def __init__(self) -> None:
+        logger.info("Using no-op contextualizer (contextualization disabled)")
 
-    async def contextualize_table(self, table_text: str, full_document: str, **kwargs) -> str:
-        """Return original content unchanged."""
+    async def contextualize_table(
+        self, table_text: str, full_document: str, **kwargs: Any
+    ) -> str:
+        """Pass through content unchanged."""
         return table_text
 
-    async def contextualize_batch(self, chunks: list, full_document: str, **kwargs) -> list:
-        """Return chunks with original content."""
+    async def contextualize_batch(
+        self, chunks: list[dict[str, Any]], full_document: str, **kwargs: Any
+    ) -> list[dict[str, Any]]:
+        """Pass through all chunks unchanged."""
         for chunk in chunks:
             chunk["contextualized_content"] = chunk.get("content", "")
         return chunks
 
-    def close(self):
+    async def close(self) -> None:
         """No resources to close."""
         pass
