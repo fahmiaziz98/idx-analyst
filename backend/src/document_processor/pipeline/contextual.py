@@ -69,33 +69,6 @@ class TableContextualizer:
             logger.error(f"Failed to initialize VLM client: {e}")
             raise ValidationError(f"Failed to initialize VLM client: {e}") from e
 
-    @staticmethod
-    def _extract_markdown(text: str) -> str:
-        """
-        Extract markdown content from code block wrappers.
-
-        Args:
-            text: Raw text that may contain markdown code block wrappers.
-
-        Returns:
-            Clean markdown text.
-        """
-        text = text.strip()
-
-        # Check for ```markdown or ```md at the start
-        if text.startswith("```markdown"):
-            text = text[len("```markdown") :]
-        elif text.startswith("```md"):
-            text = text[len("```md") :]
-        elif text.startswith("```"):
-            text = text[3:]
-
-        # Remove trailing ```
-        if text.endswith("```"):
-            text = text[:-3]
-
-        return text.strip()
-
     async def contextualize_table(
         self, table_text: str, full_document: str, retry_count: int = 0
     ) -> str:
@@ -134,16 +107,13 @@ class TableContextualizer:
                 ]
             )
 
-            # Extract and clean
-            clean_response = self._extract_markdown(response)
-
-            if not clean_response or len(clean_response) < 50:
+            if not response or len(response) < 50:
                 raise ContextualizationError(
-                    f"Generated context too short: {len(clean_response)} chars"
+                    f"Generated context too short: {len(response)} chars"
                 )
 
-            logger.debug(f"Generated {len(clean_response)} chars of context")
-            return clean_response
+            logger.debug(f"Generated {len(response)} chars of context")
+            return response
 
         except ContextualizationError:
             raise
