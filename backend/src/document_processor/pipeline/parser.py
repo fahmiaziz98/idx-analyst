@@ -273,7 +273,7 @@ class DocumentParser:
         markdown_pages: list[str] = []
         for idx, img in enumerate(images, start=start_page):
             try:
-                logger.debug(f"Parsing page {idx}...")
+                logger.info(f"Parsing page {idx}...")
                 markdown = await self.parser.generate_with_image(
                     image=img,
                     system_prompt=PARSER_SYSTEM_PROMPT,
@@ -281,7 +281,7 @@ class DocumentParser:
                 )
                 clean_markdown = self._extract_markdown(markdown)
                 markdown_pages.append(clean_markdown)
-                logger.debug(f"Page {idx} parsed successfully")
+                logger.info(f"Page {idx} parsed successfully")
 
             except Exception as e:
                 raise ParsingError(f"VLM parsing failed on page {idx}: {e}") from e

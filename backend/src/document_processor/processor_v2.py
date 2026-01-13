@@ -40,23 +40,23 @@ class DocumentProcessor:
 
     def __init__(
         self,
-        llama_parse_key: str,
-        openai_api_key: str | None = None,
         enable_contextualization: bool = True,
         chunk_size: int = 1024,
         chunk_overlap: int = 150,
+        temperature: float = 1.5,
+        max_tokens: int = 8192,
         **kwargs,
     ):
         """
         Initialize the document processor.
 
         Args:
-            llama_parse_key: LlamaParse API key
-            openai_api_key: OpenAI-compatible API key for contextualization
             enable_contextualization: Whether to use LLM for table context
             chunk_size: Maximum tokens per chunk
             chunk_overlap: Overlap tokens between chunks
-            **kwargs: Additional config (contextualization_model, base_url, etc.)
+            temperature: LLM temperature for parsing/contextualization
+            max_tokens: Max tokens for LLM generation
+            **kwargs: Additional config (model_name, base_url, etc.)
 
         Raises:
             DocumentProcessorError: If initialization fails
@@ -64,13 +64,14 @@ class DocumentProcessor:
         logger.info("Initializing DocumentProcessor")
 
         try:
-            self.parser = DocumentParser(api_key=llama_parse_key)
+            self.parser = DocumentParser(temperature=temperature, max_tokens=max_tokens)
 
             self.chunker = DocumentChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-            if enable_contextualization and openai_api_key:
+            if enable_contextualization:
                 self.contextualizer = TableContextualizer(
-                    api_key=openai_api_key,
+                    temperature=kwargs.get("context_temperature", 1.0),
+                    max_tokens=kwargs.get("context_max_tokens", 4096),
                 )
                 logger.info("Contextualization enabled")
             else:
@@ -92,7 +93,7 @@ class DocumentProcessor:
         year: int,
         output_dir: str = "data/processed",
         output_filename: str = DEFAULT_OUTPUT_FILENAME,
-        start_page: int | None = None,
+        start_page: int = 1,
         end_page: int | None = None,
         mode: str = "append",
     ) -> ProcessingResult:
@@ -100,9 +101,9 @@ class DocumentProcessor:
         Process a single document through the complete pipeline.
 
         Pipeline steps:
-        1. Parse PDF to markdown (with optional page range)
-        2. Split markdown into chunks
-        3. Contextualize tables with LLM
+        1. Parse PDF pages to markdown using VLM
+        2. Split markdown into chunks with table detection
+        3. Contextualize tables with LLM (Qwen3-VL)
         4. Generate IDs and attach metadata
         5. Save to JSON (append or new mode)
 
@@ -113,7 +114,7 @@ class DocumentProcessor:
             year: Reporting year
             output_dir: Output directory path
             output_filename: Output JSON filename
-            start_page: Optional starting page (1-indexed)
+            start_page: Starting page (1-indexed, default: 1)
             end_page: Optional ending page (1-indexed)
             mode: "append" or "new"
 
@@ -128,40 +129,37 @@ class DocumentProcessor:
         logger.info(f"Company: {company_name} ({ticker})")
         logger.info(f"Year: {year}")
         logger.info(f"Mode: {mode.upper()}")
-        if start_page and end_page:
+        if end_page:
             logger.info(f"Pages: {start_page}-{end_page}")
+        else:
+            logger.info(f"Pages: {start_page}-EOF")
         logger.info("=" * 80)
 
         try:
             # Step 1: Parse PDF
-            logger.info("Step 1/5: Parsing PDF to markdown")
-            markdown_docs, original_file = await self.parser.parse_pdf(
-                input_file, start_page, end_page
-            )
+            logger.info("Step 1/5: Parsing PDF to markdown via VLM")
+            markdown_docs = await self.parser.parse_pdf(input_file, start_page, end_page)
 
             # Step 2: Process each page
-            logger.info(f"Step 2/5: Processing {len(markdown_docs)} pages")
+            logger.info(f"Step 2/5: Processing {len(markdown_docs)} parsed pages")
             all_chunks = []
 
-            for page_idx, doc in enumerate(markdown_docs, start=1):
+            for page_idx, markdown_text in enumerate(markdown_docs, start=0):
                 # Calculate actual page number
-                if start_page:
-                    actual_page = start_page + page_idx - 1
-                else:
-                    actual_page = doc.metadata.get("page_number", page_idx)
+                actual_page = start_page + page_idx
 
-                logger.info(f"  Processing page {actual_page}...")
+                logger.debug(f"  Processing page {actual_page}...")
 
                 # Parse markdown to elements
-                elements = self.chunker.parse_markdown(doc.text)
+                elements = self.chunker.parse_markdown(markdown_text)
 
                 # Chunk elements
                 chunks = self.chunker.chunk_elements(elements)
 
-                # Add page-specific info
+                # Add page-specific info and full text for context
                 for chunk in chunks:
                     chunk["page"] = actual_page
-                    chunk["full_text"] = doc.text
+                    chunk["full_page_text"] = markdown_text
 
                 all_chunks.extend(chunks)
 
@@ -170,26 +168,35 @@ class DocumentProcessor:
             # Step 3: Contextualize tables
             logger.info("Step 3/5: Contextualizing tables")
 
-            # Group chunks by page and contextualize
+            # Process in batch for the whole document/range
+            # Note: contextualize_batch handles filtering for 'table' type
             contextualized_chunks = []
-            for page_idx, doc in enumerate(markdown_docs):
-                page_chunks = [c for c in all_chunks if c.get("page") == page_idx + 1]
+
+            # Since chunks already have 'full_page_text', we can process page by page
+            # or try to group if contextualizer supports it.
+            # Current contextualizer takes full_document.
+            # We'll process page by page to keep it consistent with the table context.
+
+            for page_idx in range(len(markdown_docs)):
+                curr_page_num = start_page + page_idx
+                page_markdown = markdown_docs[page_idx]
+                page_chunks = [c for c in all_chunks if c.get("page") == curr_page_num]
 
                 if page_chunks:
                     page_contextualized = await self.contextualizer.contextualize_batch(
-                        page_chunks, doc.text, show_progress=True
+                        page_chunks, page_markdown, show_progress=False
                     )
                     contextualized_chunks.extend(page_contextualized)
 
             # Step 4: Build final chunks with metadata
             logger.info("Step 4/5: Building chunks with metadata")
             final_chunks = self._build_final_chunks(
-                contextualized_chunks, company_name, ticker, year, original_file
+                contextualized_chunks, company_name, ticker, year, input_file
             )
 
             # Update stats
             self.stats.total_chunks = len(final_chunks)
-            self.stats.table_chunks = sum(1 for c in final_chunks if c.get("is_header") is False)
+            self.stats.table_chunks = sum(1 for c in all_chunks if c.get("type") == "table")
             self.stats.text_chunks = self.stats.total_chunks - self.stats.table_chunks
             self.stats.contextualized_chunks = sum(
                 1 for c in final_chunks if c.get("contextual_text") != c.get("chunk_text")
@@ -262,7 +269,7 @@ class DocumentProcessor:
                 "id": chunk_id,
                 "contextual_text": chunk_data.get("contextualized_content", chunk_data["content"]),
                 "chunk_text": chunk_data["content"],
-                "text": chunk_data.get("full_text", ""),
+                "text": chunk_data.get("full_page_text", ""),
                 "metadata": metadata,
             }
 
@@ -338,7 +345,7 @@ class DocumentProcessor:
         except Exception as e:
             raise DocumentProcessorError(f"Failed to save output: {str(e)}") from e
 
-    def close(self):
+    async def close(self):
         """
         Close all resources and connections.
 
@@ -347,6 +354,6 @@ class DocumentProcessor:
         logger.info("Closing document processor")
 
         try:
-            self.contextualizer.close()
+            await self.contextualizer.close()
         except Exception as e:
             logger.warning(f"Error closing contextualizer: {e}")

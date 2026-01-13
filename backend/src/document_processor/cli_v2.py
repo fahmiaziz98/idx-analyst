@@ -227,32 +227,29 @@ def validate_arguments(args):
 
 def check_environment_variables():
     """
-    Check required environment variables.
+    Check required environment variables for VLM.
 
     Returns:
-        Dictionary with API keys
-
-    Raises:
-        SystemExit: If required keys are missing
+        Dictionary with status of keys
     """
-    llama_parse_key = os.getenv("LLAMA_PARSE_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY")
+    vllm_endpoint = os.getenv("VLLM_ENDPOINT")
+    vllm_api_key = os.getenv("VLLM_API_KEY")
 
-    if not llama_parse_key:
-        logger.error("❌ LLAMA_PARSE_KEY not found in environment variables")
-        logger.error("   Get your API key at: https://cloud.llamaindex.ai/api-key")
+    if not vllm_endpoint:
+        logger.error("❌ VLLM_ENDPOINT not found in environment variables")
+        logger.error("   Required for Vision-Language Model parsing (Qwen3-VL)")
         sys.exit(1)
 
-    return {"llama_parse_key": llama_parse_key, "openai_api_key": openai_api_key}
+    return {"vllm_endpoint": vllm_endpoint, "vllm_api_key": vllm_api_key}
 
 
-def display_configuration(args, api_keys: dict):
+def display_configuration(args, api_status: dict):
     """
     Display processing configuration.
 
     Args:
         args: Parsed arguments
-        api_keys: Dictionary with API key status
+        api_status: Dictionary with API configuration status
     """
     logger.info("=" * 80)
     logger.info("📋 Document Processing Configuration")
@@ -273,13 +270,14 @@ def display_configuration(args, api_keys: dict):
     logger.info(f"Chunk Size    : {args.chunk_size} tokens")
     logger.info(f"Chunk Overlap : {args.chunk_overlap} tokens")
 
+    # VLM Endpoint status
+    logger.info(f"VLM Endpoint  : {api_status.get('vllm_endpoint')}")
+
     # Contextualization status
     if args.no_contextualization:
         logger.info("Context       : DISABLED")
-    elif api_keys.get("openai_api_key"):
-        logger.info("Context       : ENABLED (tables only)")
     else:
-        logger.info("Context       : DISABLED (no API key)")
+        logger.info("Context       : ENABLED (tables only)")
 
     logger.info("=" * 80)
 
@@ -311,8 +309,6 @@ async def main():
         logger.info("🔧 Initializing document processor...")
 
         processor = DocumentProcessor(
-            llama_parse_key=api_keys["llama_parse_key"],
-            openai_api_key=api_keys.get("openai_api_key"),
             enable_contextualization=not args.no_contextualization,
             chunk_size=args.chunk_size,
             chunk_overlap=args.chunk_overlap,
@@ -326,7 +322,7 @@ async def main():
             year=args.year,
             output_dir=args.output,
             output_filename=args.output_filename,
-            start_page=args.start_page,
+            start_page=args.start_page or 1,
             end_page=args.end_page,
             mode=args.mode,
         )
@@ -355,7 +351,7 @@ async def main():
         logger.info("=" * 80)
 
         # Cleanup
-        processor.close()
+        await processor.close()
 
     except KeyboardInterrupt:
         logger.warning("⚠️ Processing interrupted by user")
