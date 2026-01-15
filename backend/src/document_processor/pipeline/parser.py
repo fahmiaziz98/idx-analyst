@@ -1,16 +1,19 @@
-import io
 from pathlib import Path
 
 import fitz
+import numpy as np
 from loguru import logger
+from pdf2image import convert_from_path
 from PIL import Image
 
 from src.core.exception import ParsingError, ValidationError
+from src.document_processor.pipeline.crop import ContentCroper
 from src.document_processor.pipeline.prompt import (
     PARSER_SYSTEM_PROMPT,
     PARSER_USER_PROMPT,
 )
 from src.rag.llm_client import VLMClient
+from src.utils.timing import Timer
 
 
 class DocumentParser:
@@ -19,15 +22,14 @@ class DocumentParser:
 
     This class provides:
     - PDF validation and page count retrieval
-    - Page range extraction as PIL Images
+    - High-quality page rasterization using pdf2image
+    - Intelligent whitespace cropping
     - Async document parsing to markdown using VLM
 
     Attributes:
         parser: VLMClient instance for VLM inference.
-
-    Example:
-        >>> parser = DocumentParser()
-        >>> markdown_pages = await parser.parse_pdf("report.pdf", start_page=1, end_page=5)
+        dpi: Dots Per Inch for rasterization (default: 300).
+        cropper: ContentCroper instance for image post-processing.
     """
 
     def __init__(
@@ -35,20 +37,25 @@ class DocumentParser:
         temperature: float = 1.5,
         min_p: float = 0.1,
         max_tokens: int = 8192,
+        dpi: int = 300,
+        enable_cropping: bool = True,
     ) -> None:
         """
-        Initialize the document parser with VLM configuration.
+        Initialize the document parser with VLM and processing configuration.
 
         Args:
-            temperature: Sampling temperature for VLM generation. Higher values
-                produce more creative output. Defaults to 1.5.
+            temperature: Sampling temperature for VLM generation.
             min_p: Minimum probability threshold for nucleus sampling.
-                Defaults to 0.1.
-            max_tokens: Maximum tokens for VLM response. Defaults to 8192.
-
-        Raises:
-            ParsingError: If VLMClient initialization fails.
+            max_tokens: Maximum tokens for VLM response.
+            dpi: DPI for PDF rasterization. Higher means better quality but slower.
+                Defaults to 300.
+            enable_cropping: Whether to apply intelligent whitespace cropping.
+                Defaults to True.
         """
+        self.dpi = dpi
+        self.enable_cropping = enable_cropping
+        self.cropper = ContentCroper() if enable_cropping else None
+
         try:
             logger.info("Initializing VLMClient...")
             self.parser = VLMClient(
@@ -66,18 +73,11 @@ class DocumentParser:
         """
         Extract markdown content from code block wrappers.
 
-        VLMs often wrap output in ```markdown ... ``` blocks.
-        This method strips those wrappers to get clean markdown.
-
         Args:
             text: Raw text that may contain markdown code block wrappers.
 
         Returns:
             Clean markdown text without code block wrappers.
-
-        Example:
-            >>> DocumentParser._extract_markdown("```markdown\\n# Title\\n```")
-            '# Title'
         """
         text = text.strip()
 
@@ -104,10 +104,6 @@ class DocumentParser:
 
         Returns:
             Validated Path object for the PDF file.
-
-        Raises:
-            ValidationError: If file doesn't exist, is not a PDF,
-                or is corrupted/unreadable.
         """
         path = Path(pdf_path)
 
@@ -117,6 +113,7 @@ class DocumentParser:
             raise ValidationError(f"File is not a PDF: {pdf_path}")
 
         try:
+            # We still use fitz for quick validation as it's faster than pdf2image
             with fitz.open(str(path)) as doc:
                 page_count = len(doc)
                 logger.debug(f"PDF validated: {path.name} ({page_count} pages)")
@@ -134,13 +131,11 @@ class DocumentParser:
 
         Returns:
             Number of pages in the PDF.
-
-        Raises:
-            ValidationError: If file is invalid or unreadable.
         """
         pdf_path_obj = self.validate_pdf(pdf_path)
 
         try:
+            # pdf2image uses poppler's pdfinfo, but fitz is lightweight and we have it
             with fitz.open(str(pdf_path_obj)) as doc:
                 return len(doc)
         except Exception as e:
@@ -151,80 +146,86 @@ class DocumentParser:
         pdf_path: str,
         start_page: int = 1,
         end_page: int | None = None,
-        scale: float = 4.0,
     ) -> list[Image.Image]:
         """
-        Extract PDF pages as high-resolution PIL Images.
+        Extract PDF pages as high-resolution PIL Images using pdf2image.
 
-        Converts each page to a PNG image at the specified scale factor.
-        Useful for VLM processing where image quality affects accuracy.
+        Applies intelligent cropping if enabled.
 
         Args:
             pdf_path: Path to the PDF file.
-            start_page: First page to extract (1-indexed, inclusive). Defaults to 1.
+            start_page: First page to extract (1-indexed, inclusive).
             end_page: Last page to extract (1-indexed, inclusive).
-                Defaults to None (last page of document).
-            scale: Resolution scale factor. 4.0 = 4x native resolution.
-                Higher values produce clearer images but use more memory.
-                Defaults to 4.0.
 
         Returns:
             List of PIL Image objects, one per extracted page.
-
-        Raises:
-            ValidationError: If page range is invalid.
-            ParsingError: If image extraction fails.
-
-        Example:
-            >>> images = parser.extract_pages_as_images("report.pdf", 1, 5)
-            >>> len(images)
-            5
         """
         pdf_path_obj = self.validate_pdf(pdf_path)
-        images: list[Image.Image] = []
+        
+        # Get total pages for validation
+        total_pages = self.get_page_count(str(pdf_path_obj))
+        actual_end_page = end_page if end_page is not None else total_pages
+
+        # Validate range
+        if start_page < 1:
+            raise ValidationError(f"start_page must be >= 1 (got {start_page})")
+        if actual_end_page < start_page:
+            raise ValidationError(
+                f"end_page ({actual_end_page}) must be >= start_page ({start_page})"
+            )
+        if actual_end_page > total_pages:
+            raise ValidationError(
+                f"end_page ({actual_end_page}) exceeds total pages ({total_pages})"
+            )
+
+        logger.info(
+            f"Extracting pages {start_page}-{actual_end_page} from {pdf_path_obj.name} "
+            f"at {self.dpi} DPI (Cropping: {self.enable_cropping})"
+        )
 
         try:
-            with fitz.open(str(pdf_path_obj)) as pdf_document:
-                total_pages = len(pdf_document)
+            # Convert PDF to list of PIL Images
+            # pdf2image uses 1-based indexing for first_page and last_page
+            images = convert_from_path(
+                str(pdf_path_obj),
+                dpi=self.dpi,
+                first_page=start_page,
+                last_page=actual_end_page,
+                fmt="jpeg",  # JPEG matches VLMClient expectation better usually, though PNG is fine
+                thread_count=4
+            )
 
-                # Default end_page to last page
-                actual_end_page = end_page if end_page is not None else total_pages
+            final_images = []
+            
+            # Post-process images (cropping)
+            for _, img in enumerate(images):
+                if self.enable_cropping and self.cropper:
+                    # Convert PIL -> Numpy (RGB)
+                    img_np = np.array(img)
+                    
+                    # Convert RGB (PIL) to BGR (cv2) for correct color handling if needed,
+                    # but crop logic works on grayscale/luminance mostly. 
+                    # However, cv2 usually expects BGR. 
+                    # PIL is RGB.
+                    img_bgr = img_np[:, :, ::-1].copy() 
+                    
+                    # Crop
+                    cropped_bgr = self.cropper.crop(img_bgr)
+                    
+                    # Convert filtered BGR back to RGB
+                    cropped_rgb = cropped_bgr[:, :, ::-1].copy()
+                    
+                    # Convert Numpy -> PIL
+                    final_img = Image.fromarray(cropped_rgb)
+                    final_images.append(final_img)
+                else:
+                    final_images.append(img)
 
-                # Validate page range
-                if start_page < 1:
-                    raise ValidationError(f"start_page must be >= 1 (got {start_page})")
+            logger.success(f"Extracted and processed {len(final_images)} page(s)")
+            return final_images
 
-                if actual_end_page < start_page:
-                    raise ValidationError(
-                        f"end_page ({actual_end_page}) must be >= start_page ({start_page})"
-                    )
-
-                if actual_end_page > total_pages:
-                    raise ValidationError(
-                        f"end_page ({actual_end_page}) exceeds total pages ({total_pages})"
-                    )
-
-                logger.info(
-                    f"Extracting pages {start_page}-{actual_end_page} from {pdf_path_obj.name}"
-                )
-
-                # Extract pages (convert to 0-indexed for PyMuPDF)
-                matrix = fitz.Matrix(scale, scale)
-                for page_num in range(start_page - 1, actual_end_page):
-                    page = pdf_document[page_num]
-                    pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-
-                    img_data = pixmap.tobytes("png")
-                    img = Image.open(io.BytesIO(img_data))
-                    images.append(img)
-
-                logger.success(f"Extracted {len(images)} page(s) as images")
-                return images
-
-        except ValidationError:
-            raise
         except Exception as e:
-            raise ParsingError(f"Failed to extract pages: {e}") from e
+            raise ParsingError(f"Failed to extract pages with pdf2image: {e}") from e
 
     async def parse_pdf(
         self,
@@ -246,45 +247,37 @@ class DocumentParser:
 
         Returns:
             List of markdown strings, one per page.
-
-        Raises:
-            ValidationError: If inputs are invalid.
-            ParsingError: If VLM parsing fails.
-
-        Example:
-            >>> markdown_pages = await parser.parse_pdf("report.pdf", 1, 3)
-            >>> print(markdown_pages[0])  # First page as markdown
         """
-        # Validate and get page count
+        # Validate and get page count (implicit in extract_pages_as_images)
+        # But we verify path first
         self.validate_pdf(pdf_path)
-        total_pages = self.get_page_count(pdf_path)
-        actual_end_page = end_page if end_page is not None else total_pages
-
-        logger.info(f"Parsing {Path(pdf_path).name} (pages {start_page}-{actual_end_page})")
-
-        # Extract pages as images
+        
+        # Extract pages as images (handles extraction + cropping)
         images = self.extract_pages_as_images(
             pdf_path,
             start_page=start_page,
-            end_page=actual_end_page,
+            end_page=end_page,
         )
 
         # Parse each page with VLM
         markdown_pages: list[str] = []
-        for idx, img in enumerate(images, start=start_page):
+        start_index = start_page 
+
+        for idx, img in enumerate(images):
+            current_page_num = start_index + idx
             try:
-                logger.info(f"Parsing page {idx}...")
-                markdown = await self.parser.generate_with_image(
-                    image=img,
-                    system_prompt=PARSER_SYSTEM_PROMPT,
-                    user_prompt=PARSER_USER_PROMPT,
-                )
+                with Timer() as t:
+                    markdown = await self.parser.generate_with_image(
+                        image=img,
+                        system_prompt=PARSER_SYSTEM_PROMPT,
+                        user_prompt=PARSER_USER_PROMPT,
+                    )
                 clean_markdown = self._extract_markdown(markdown)
                 markdown_pages.append(clean_markdown)
-                logger.info(f"Page {idx} parsed successfully")
+                logger.info(f"Page {current_page_num} parsed successfully in {t.elapsed_str}")
 
             except Exception as e:
-                raise ParsingError(f"VLM parsing failed on page {idx}: {e}") from e
+                raise ParsingError(f"VLM parsing failed on page {current_page_num}: {e}") from e
 
         logger.success(f"Parsed {len(markdown_pages)} page(s) successfully")
         return markdown_pages

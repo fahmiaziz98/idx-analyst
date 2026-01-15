@@ -1,10 +1,12 @@
 import modal
 
 # Configuration
-MODEL_ID = "unsloth/Qwen3-VL-8B-Instruct-bnb-4bit"
+# MODEL_ID = "unsloth/Qwen3-VL-8B-Instruct-bnb-4bit"
+# MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct-FP8"
+MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
 MODEL_NAME = "Qwen3-VL"
 REVISION = "main"
-GPU_TYPE = "A100"
+GPU_TYPE = "H100:1"
 MINUTES = 60
 VLLM_PORT = 8000
 
@@ -36,6 +38,7 @@ app = modal.App("qwen3vl-8b-4bit-vllm-server")
         "/root/.cache/vllm": vllm_cache_vol,
     },
 )
+@modal.concurrent(max_inputs=100, target_inputs=1)
 @modal.web_server(port=VLLM_PORT, startup_timeout=10 * MINUTES)
 def serve():
     import subprocess
@@ -47,8 +50,8 @@ def serve():
         "--served-model-name", MODEL_NAME,
         "--host", "0.0.0.0",
         "--port", str(VLLM_PORT),
-        "--quantization", "bitsandbytes",  # Unsloth bnb
-        "--load-format", "bitsandbytes",   
+        # "--quantization", "bitsandbytes",  # Unsloth bnb
+        # "--load-format", "bitsandbytes",   
         "--max-model-len", "32768",
         "--disable-log-requests",         
         "--trust-remote-code",             

@@ -79,7 +79,7 @@ class VLMClient:
             str: Base64 encoded string of the image (PNG format).
         """
         buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
+        image.save(buffer, format="JPEG")
         return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     async def generate(
@@ -142,14 +142,14 @@ class VLMClient:
         image_base64 = self._image_to_base64(image)
 
         messages = [
-            {"role": "system", "content": system_prompt},
+            # {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": user_prompt},
+                    {"type": "text", "text": system_prompt},
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
                     },
                 ],
             },

@@ -45,6 +45,7 @@ class DocumentProcessor:
         chunk_overlap: int = 150,
         temperature: float = 1.5,
         max_tokens: int = 8192,
+        dpi: int = 300,
         **kwargs,
     ):
         """
@@ -56,6 +57,7 @@ class DocumentProcessor:
             chunk_overlap: Overlap tokens between chunks
             temperature: LLM temperature for parsing/contextualization
             max_tokens: Max tokens for LLM generation
+            dpi: DPI for PDF rasterization (default: 300)
             **kwargs: Additional config (model_name, base_url, etc.)
 
         Raises:
@@ -64,7 +66,9 @@ class DocumentProcessor:
         logger.info("Initializing DocumentProcessor")
 
         try:
-            self.parser = DocumentParser(temperature=temperature, max_tokens=max_tokens)
+            self.parser = DocumentParser(
+                temperature=temperature, max_tokens=max_tokens, dpi=dpi
+            )
 
             self.chunker = DocumentChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 

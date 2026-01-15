@@ -6,6 +6,7 @@ from loguru import logger
 from src.core.exception import ContextualizationError, ValidationError
 from src.document_processor.pipeline.prompt import SYSTEM_PROMPT, TABLE_PROMPT
 from src.rag.llm_client import VLMClient
+from src.utils.timing import Timer
 
 RETRY_DELAY = 1.0  # Seconds between retries
 
@@ -100,19 +101,20 @@ class TableContextualizer:
 
             # Call LLM
             logger.debug(f"Calling {self.model} for table contextualization")
-            response = await self.client.generate(
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_message},
-                ]
-            )
+            with Timer() as t:
+                response = await self.client.generate(
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": user_message},
+                    ]
+                )
 
             if not response or len(response) < 50:
                 raise ContextualizationError(
                     f"Generated context too short: {len(response)} chars"
                 )
 
-            logger.debug(f"Generated {len(response)} chars of context")
+            logger.info(f"Generated {len(response)} chars of context in {t.elapsed_str}")
             return response
 
         except ContextualizationError:

@@ -155,6 +155,13 @@ Environment Variables:
     )
 
     processing_group.add_argument(
+        "--dpi",
+        type=int,
+        default=300,
+        help="DPI for image extraction (default: 300). Higher = better quality but slower.",
+    )
+
+    processing_group.add_argument(
         "--no-contextualization",
         action="store_true",
         help="Disable LLM contextualization for tables (faster, cheaper)",
@@ -269,6 +276,7 @@ def display_configuration(args, api_status: dict):
 
     logger.info(f"Chunk Size    : {args.chunk_size} tokens")
     logger.info(f"Chunk Overlap : {args.chunk_overlap} tokens")
+    logger.info(f"Image DPI     : {args.dpi}")
 
     # VLM Endpoint status
     logger.info(f"VLM Endpoint  : {api_status.get('vllm_endpoint')}")
@@ -312,6 +320,7 @@ async def main():
             enable_contextualization=not args.no_contextualization,
             chunk_size=args.chunk_size,
             chunk_overlap=args.chunk_overlap,
+            dpi=args.dpi,
         )
 
         # Process document
