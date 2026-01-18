@@ -37,6 +37,7 @@ class ChunkMetadata:
     year: int
     page_number: int
     document_path: str
+    element_type: Literal["header", "paragraph", "table", "text"]
 
     def to_dict(self) -> Dict:
         """Convert to dictionary representation."""

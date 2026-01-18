@@ -266,6 +266,7 @@ class DocumentProcessor:
                 year=year,
                 page_number=chunk_data.get("page", 0),
                 document_path=Path(document_path).name,  # Use original filename only
+                element_type=chunk_data.get("type", "text"),
             ).to_dict()
 
             # Build chunk object (matching old schema)
