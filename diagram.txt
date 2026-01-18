@@ -1,0 +1,45 @@
+# Dev Environment
+graph TD
+    User((User)) --> Vercel[Vercel - Next.js Frontend]
+    Vercel --> HF[HF Spaces - FastAPI Backend]
+    
+    subgraph "External AI Services"
+        HF --> Modal[Modal.com - TEI Embedding]
+        HF --> RunPod[RunPod - vLLM Qwen3-VL]
+            RunPod --> AI-Parsing[AI Parsing - HF Spaces]
+        HF --> AI-Parsing[AI Parsing - HF Spaces]
+    end
+    
+    subgraph "Storage Free Tier"
+        HF --> PG[(Postgres Cloud)]
+        HF --> Qdrant[(Qdrant Cloud)]
+        HF --> Redis[(Redis Cloud)]
+    end
+
+# Prod Environment K8s
+graph TD
+    User((User)) --> FE[Frontend - Next.js]
+    
+    subgraph "Cloud Storage"
+        S3[(S3 / Cloudflare R2)]
+    end
+
+    subgraph "Kubernetes Cluster (Prod)"
+        FE -- 1. Request Upload URL --> Core[API Core]
+        Core -- 2. Return Presigned URL --> FE
+        FE -- 3. Upload File Langsung --> S3
+        
+        FE -- 4. Notify Upload Done --> Core
+        Core -- 5. Queue Task --> Redis[(Redis/Celery)]
+        Redis --> Proc[AI Processor]
+        
+        Proc -- 6. Download File --> S3
+        Proc --> Qdrant[(Qdrant)]
+        Core --> PG[(Postgres)]
+    end
+    
+    subgraph "External GPU Platforms"
+        Proc -- API Call --> Modal[Modal - TEI]
+        Proc -- API Call --> RunPod[RunPod - vLLM]
+    end
+

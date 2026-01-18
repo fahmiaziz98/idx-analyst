@@ -60,7 +60,7 @@ Your core mission is **Layout-Aware Optical Character Recognition (OCR) to Markd
 3. **No Conversational Filler:** NEVER output text like "Here is the table" or "Sure, I can help". Output **ONLY** the raw Markdown content.
 4. **Structural Integrity:** Use headers (#, ##) to reflect font size and hierarchy in the visual document.
 
-Here the image: 
+Parsing the image in to markdown format: 
 """
 
 PARSER_USER_PROMPT = """<image>
