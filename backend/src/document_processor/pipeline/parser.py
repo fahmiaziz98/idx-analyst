@@ -1,13 +1,17 @@
 from pathlib import Path
 
 import fitz
+import cv2
 import numpy as np
 from loguru import logger
-from pdf2image import convert_from_path
 from PIL import Image
 
 from src.core.exception import ParsingError, ValidationError
 from src.document_processor.pipeline.crop import ContentCroper
+from src.document_processor.pipeline.image_utils import (
+    auto_correct_orientation,
+    resize_image,
+)
 from src.document_processor.pipeline.prompt import (
     PARSER_SYSTEM_PROMPT,
     PARSER_USER_PROMPT,
@@ -22,8 +26,10 @@ class DocumentParser:
 
     This class provides:
     - PDF validation and page count retrieval
-    - High-quality page rasterization using pdf2image
+    - High-quality page rasterization using fitz (PyMuPDF)
+    - Intelligent auto-rotation and orientation correction
     - Intelligent whitespace cropping
+    - Smart resizing for VLM optimization
     - Async document parsing to markdown using VLM
 
     Attributes:
@@ -113,7 +119,6 @@ class DocumentParser:
             raise ValidationError(f"File is not a PDF: {pdf_path}")
 
         try:
-            # We still use fitz for quick validation as it's faster than pdf2image
             with fitz.open(str(path)) as doc:
                 page_count = len(doc)
                 logger.debug(f"PDF validated: {path.name} ({page_count} pages)")
@@ -135,7 +140,6 @@ class DocumentParser:
         pdf_path_obj = self.validate_pdf(pdf_path)
 
         try:
-            # pdf2image uses poppler's pdfinfo, but fitz is lightweight and we have it
             with fitz.open(str(pdf_path_obj)) as doc:
                 return len(doc)
         except Exception as e:
@@ -148,9 +152,9 @@ class DocumentParser:
         end_page: int | None = None,
     ) -> list[Image.Image]:
         """
-        Extract PDF pages as high-resolution PIL Images using pdf2image.
+        Extract PDF pages as images using fitz (PyMuPDF).
 
-        Applies intelligent cropping if enabled.
+        Applies auto-rotation, cropping (if enabled), and resizing.
 
         Args:
             pdf_path: Path to the PDF file.
@@ -162,70 +166,78 @@ class DocumentParser:
         """
         pdf_path_obj = self.validate_pdf(pdf_path)
         
-        # Get total pages for validation
-        total_pages = self.get_page_count(str(pdf_path_obj))
-        actual_end_page = end_page if end_page is not None else total_pages
-
-        # Validate range
-        if start_page < 1:
-            raise ValidationError(f"start_page must be >= 1 (got {start_page})")
-        if actual_end_page < start_page:
-            raise ValidationError(
-                f"end_page ({actual_end_page}) must be >= start_page ({start_page})"
-            )
-        if actual_end_page > total_pages:
-            raise ValidationError(
-                f"end_page ({actual_end_page}) exceeds total pages ({total_pages})"
-            )
-
-        logger.info(
-            f"Extracting pages {start_page}-{actual_end_page} from {pdf_path_obj.name} "
-            f"at {self.dpi} DPI (Cropping: {self.enable_cropping})"
-        )
+        # Calculate zoom based on DPI (72 dpi is default scale=1.0)
+        zoom = self.dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
 
         try:
-            # Convert PDF to list of PIL Images
-            # pdf2image uses 1-based indexing for first_page and last_page
-            images = convert_from_path(
-                str(pdf_path_obj),
-                dpi=self.dpi,
-                first_page=start_page,
-                last_page=actual_end_page,
-                fmt="jpeg",  # JPEG matches VLMClient expectation better usually, though PNG is fine
-                thread_count=4
+            doc = fitz.open(str(pdf_path_obj))
+            total_pages = len(doc)
+            actual_end_page = end_page if end_page is not None else total_pages
+
+            # Validate range
+            if start_page < 1:
+                raise ValidationError(f"start_page must be >= 1 (got {start_page})")
+            if actual_end_page < start_page:
+                raise ValidationError(
+                    f"end_page ({actual_end_page}) must be >= start_page ({start_page})"
+                )
+            if actual_end_page > total_pages:
+                raise ValidationError(
+                    f"end_page ({actual_end_page}) exceeds total pages ({total_pages})"
+                )
+
+            logger.info(
+                f"Extracting pages {start_page}-{actual_end_page} from {pdf_path_obj.name} "
+                f"at {self.dpi} DPI (zoom={zoom:.2f}, Cropping: {self.enable_cropping})"
             )
 
             final_images = []
-            
-            # Post-process images (cropping)
-            for _, img in enumerate(images):
-                if self.enable_cropping and self.cropper:
-                    # Convert PIL -> Numpy (RGB)
-                    img_np = np.array(img)
-                    
-                    # Convert RGB (PIL) to BGR (cv2) for correct color handling if needed,
-                    # but crop logic works on grayscale/luminance mostly. 
-                    # However, cv2 usually expects BGR. 
-                    # PIL is RGB.
-                    img_bgr = img_np[:, :, ::-1].copy() 
-                    
-                    # Crop
-                    cropped_bgr = self.cropper.crop(img_bgr)
-                    
-                    # Convert filtered BGR back to RGB
-                    cropped_rgb = cropped_bgr[:, :, ::-1].copy()
-                    
-                    # Convert Numpy -> PIL
-                    final_img = Image.fromarray(cropped_rgb)
-                    final_images.append(final_img)
-                else:
-                    final_images.append(img)
 
+            # Loop through pages (0-indexed in fitz)
+            for i in range(start_page - 1, actual_end_page):
+                page = doc[i]
+                
+                # Render page
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                
+                # Convert to numpy (buffer -> flat array -> reshape)
+                # pix.samples matches the pix.n channels
+                img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                    pix.height, pix.width, pix.n
+                )
+                
+                # Convert to BGR for OpenCV processing
+                if pix.n == 4:  # RGBA
+                    img_np = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                elif pix.n == 3:  # RGB
+                    img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                
+                # Auto-rotate
+                img_rotated = auto_correct_orientation(img_np)
+                
+                # Crop
+                if self.enable_cropping and self.cropper:
+                    img_cropped = self.cropper.crop(img_rotated)
+                else:
+                    img_cropped = img_rotated
+                
+                # Resize (post-crop zoom/resize)
+                img_resized = resize_image(img_cropped)
+                
+                # Convert BGR back to RGB for PIL
+                img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+                
+                # Convert to PIL Image
+                final_img = Image.fromarray(img_rgb)
+                final_images.append(final_img)
+
+            doc.close()
             logger.success(f"Extracted and processed {len(final_images)} page(s)")
             return final_images
 
         except Exception as e:
-            raise ParsingError(f"Failed to extract pages with pdf2image: {e}") from e
+            raise ParsingError(f"Failed to extract pages with fitz: {e}") from e
 
     async def parse_pdf(
         self,
@@ -252,7 +264,7 @@ class DocumentParser:
         # But we verify path first
         self.validate_pdf(pdf_path)
         
-        # Extract pages as images (handles extraction + cropping)
+        # Extract pages as images (handles extraction + cropping + rotation)
         images = self.extract_pages_as_images(
             pdf_path,
             start_page=start_page,
