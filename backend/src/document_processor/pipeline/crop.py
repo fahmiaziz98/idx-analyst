@@ -19,9 +19,9 @@ class ContentCroper:
 
     def __init__(
         self,
-        padding: int = 10,
-        ignore_bottom_percent: float = 12.0,
-        footer_gap_threshold: int = 100,
+        padding: int = 2,
+        ignore_bottom_percent: float = 10.0,
+        footer_gap_threshold: int = 80,
         column_ink_ratio: float = 0.01,
         row_ink_ratio: float = 0.002,
     ):
