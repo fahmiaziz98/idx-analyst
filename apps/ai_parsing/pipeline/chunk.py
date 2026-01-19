@@ -6,8 +6,8 @@ import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 
-from src.core.exception import ChunkingError
-from src.schemas.processor import DocumentElement
+from ..core.exception import ChunkingError
+from ..schemas import DocumentElement
 
 
 class DocumentChunker:

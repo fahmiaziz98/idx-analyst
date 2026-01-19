@@ -6,18 +6,18 @@ import numpy as np
 from loguru import logger
 from PIL import Image
 
-from src.core.exception import ParsingError, ValidationError
-from src.document_processor.pipeline.crop import ContentCroper
-from src.document_processor.pipeline.image_utils import (
+from ..core.exception import ParsingError, ValidationError
+from .crop import ContentCroper
+from .image_utils import (
     auto_correct_orientation,
     resize_image,
 )
-from src.document_processor.pipeline.prompt import (
+from .prompt import (
     PARSER_SYSTEM_PROMPT,
     PARSER_USER_PROMPT,
 )
-from src.rag.llm_client import VLMClient
-from src.utils.timing import Timer
+from ..rag.llm_client import VLMClient
+from ..utils.timing import Timer
 
 
 class DocumentParser:

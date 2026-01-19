@@ -7,8 +7,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from loguru import logger
 
-from src.core.exception import DocumentProcessorError
-from src.document_processor.processor_v2 import DocumentProcessor
+from .core.exception import DocumentProcessorError
+from .processor_v2 import DocumentProcessor
 
 
 def setup_logging(verbose: bool = False):
@@ -43,14 +43,14 @@ def parse_arguments():
         epilog="""
 Examples:
   # Basic usage (process entire PDF)
-  python -m src.document_processor.cli \\
+  python -m apps.ai_parsing.cli_v2 \\
     --input data/reports/ADRO_2023.pdf \\
     --ticker ADRO \\
     --company "PT Adaro Energy" \\
     --year 2023
 
   # Process specific page range
-  python -m src.document_processor.cli \\
+  python -m apps.ai_parsing.cli_v2 \\
     --input data/reports/BBCA_2023.pdf \\
     --ticker BBCA \\
     --company "Bank Central Asia" \\
@@ -59,7 +59,7 @@ Examples:
     --end-page 75
 
   # Custom output location
-  python -m src.document_processor.cli \\
+  python -m apps.ai_parsing.cli_v2 \\
     --input data/reports/TLKM_2023.pdf \\
     --ticker TLKM \\
     --company "Telkom Indonesia" \\
@@ -68,7 +68,7 @@ Examples:
     --output-filename TLKM_2023.json
 
   # Start fresh (overwrite existing data)
-  python -m src.document_processor.cli \\
+  python -m apps.ai_parsing.cli_v2 \\
     --input data/reports/ASII_2023.pdf \\
     --ticker ASII \\
     --company "Astra International" \\
@@ -76,7 +76,7 @@ Examples:
     --mode new
 
   # Disable table contextualization (faster, cheaper)
-  python -m src.document_processor.cli \\
+  python -m apps.ai_parsing.cli_v2 \\
     --input data/reports/UNVR_2023.pdf \\
     --ticker UNVR \\
     --company "Unilever Indonesia" \\

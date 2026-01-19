@@ -4,19 +4,19 @@ from pathlib import Path
 
 from loguru import logger
 
-from src.core.exception import (
+from .core.exception import (
     ChunkingError,
     ContextualizationError,
     DocumentProcessorError,
     ParsingError,
 )
-from src.document_processor.pipeline import (
+from .pipeline import (
     DocumentChunker,
     DocumentParser,
     NoOpContextualizer,
     TableContextualizer,
 )
-from src.schemas.processor import ChunkMetadata, ProcessingResult, ProcessingStats
+from .schemas import ChunkMetadata, ProcessingResult, ProcessingStats
 
 DEFAULT_OUTPUT_FILENAME = "processed_data.json"
 

@@ -3,10 +3,10 @@ from typing import Any
 
 from loguru import logger
 
-from src.core.exception import ContextualizationError, ValidationError
-from src.document_processor.pipeline.prompt import SYSTEM_PROMPT, TABLE_PROMPT
-from src.rag.llm_client import VLMClient
-from src.utils.timing import Timer
+from ..core.exception import ContextualizationError, ValidationError
+from .prompt import SYSTEM_PROMPT, TABLE_PROMPT
+from ..rag.llm_client import VLMClient
+from ..utils.timing import Timer
 
 RETRY_DELAY = 1.0  # Seconds between retries
 
