@@ -5,7 +5,7 @@ from loguru import logger
 
 from ..core.exception import ContextualizationError, ValidationError
 from .prompt import SYSTEM_PROMPT, TABLE_PROMPT
-from ..rag.llm_client import VLMClient
+from .llm_client import VLMClient
 from ..utils.timing import Timer
 
 RETRY_DELAY = 1.0  # Seconds between retries

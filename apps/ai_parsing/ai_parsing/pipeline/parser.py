@@ -16,7 +16,7 @@ from .prompt import (
     PARSER_SYSTEM_PROMPT,
     PARSER_USER_PROMPT,
 )
-from ..rag.llm_client import VLMClient
+from .llm_client import VLMClient
 from ..utils.timing import Timer
 
 

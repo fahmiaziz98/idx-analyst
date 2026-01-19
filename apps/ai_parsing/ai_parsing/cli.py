@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from .core.exception import DocumentProcessorError
-from .processor_v2 import DocumentProcessor
+from .processor import DocumentProcessor
 
 
 def setup_logging(verbose: bool = False):
@@ -43,44 +43,44 @@ def parse_arguments():
         epilog="""
 Examples:
   # Basic usage (process entire PDF)
-  python -m apps.ai_parsing.cli_v2 \\
-    --input data/reports/ADRO_2023.pdf \\
-    --ticker ADRO \\
-    --company "PT Adaro Energy" \\
+  python -m ai_parsing \
+    --input data/reports/ADRO_2023.pdf \
+    --ticker ADRO \
+    --company "PT Adaro Energy" \
     --year 2023
 
   # Process specific page range
-  python -m apps.ai_parsing.cli_v2 \\
-    --input data/reports/BBCA_2023.pdf \\
-    --ticker BBCA \\
-    --company "Bank Central Asia" \\
-    --year 2023 \\
-    --start-page 50 \\
+  python -m ai_parsing \
+    --input data/reports/BBCA_2023.pdf \
+    --ticker BBCA \
+    --company "Bank Central Asia" \
+    --year 2023 \
+    --start-page 50 \
     --end-page 75
 
   # Custom output location
-  python -m apps.ai_parsing.cli_v2 \\
-    --input data/reports/TLKM_2023.pdf \\
-    --ticker TLKM \\
-    --company "Telkom Indonesia" \\
-    --year 2023 \\
-    --output data/output \\
+  python -m ai_parsing \
+    --input data/reports/TLKM_2023.pdf \
+    --ticker TLKM \
+    --company "Telkom Indonesia" \
+    --year 2023 \
+    --output data/output \
     --output-filename TLKM_2023.json
 
   # Start fresh (overwrite existing data)
-  python -m apps.ai_parsing.cli_v2 \\
-    --input data/reports/ASII_2023.pdf \\
-    --ticker ASII \\
-    --company "Astra International" \\
-    --year 2023 \\
+  python -m ai_parsing \
+    --input data/reports/ASII_2023.pdf \
+    --ticker ASII \
+    --company "Astra International" \
+    --year 2023 \
     --mode new
 
   # Disable table contextualization (faster, cheaper)
-  python -m apps.ai_parsing.cli_v2 \\
-    --input data/reports/UNVR_2023.pdf \\
-    --ticker UNVR \\
-    --company "Unilever Indonesia" \\
-    --year 2023 \\
+  python -m ai_parsing \
+    --input data/reports/UNVR_2023.pdf \
+    --ticker UNVR \
+    --company "Unilever Indonesia" \
+    --year 2023 \
     --no-contextualization
 
 Environment Variables:
